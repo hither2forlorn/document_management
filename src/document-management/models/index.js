@@ -1,30 +1,41 @@
-module.exports = (sequelize, Sequelize) => ({
-  Document: require("./document")(sequelize, Sequelize),
-  LocationMap: require("./location_map")(sequelize, Sequelize),
-  LocationType: require("./location_type")(sequelize, Sequelize),
-  DocumentType: require("./document_type")(sequelize, Sequelize),
-  DocumentTypeIndex: require("./document_index")(sequelize, Sequelize),
-  DocumentIndexValue: require("./document_index_values")(sequelize, Sequelize),
-  Language: require("./language")(sequelize, Sequelize),
-  DocumentCondition: require("./document_condition")(sequelize, Sequelize),
+const Sequelize = require("sequelize");
 
-  ApprovalMaster: require("./approval_master")(sequelize, Sequelize),
-  ApprovalQueue: require("./approval_queue")(sequelize, Sequelize),
-  Attachment: require("./attachment")(sequelize, Sequelize),
-  DocumentAudit: require("./document_audit")(sequelize, Sequelize),
-  SecurityLevel: require("./security_level")(sequelize, Sequelize),
-  DocumentAccessUser: require("./document_access_user")(sequelize, Sequelize),
-  DocumentCheckout: require("./document_checkout")(sequelize, Sequelize),
-  HourlyAccess: require("./hourly_access")(sequelize, Sequelize),
-  HourlyAccessMultiple: require("./hourly_access_multiple.js")(sequelize, Sequelize),
-  Watermark: require("./watermark")(sequelize, Sequelize),
-  Favourite: require("./favourite")(sequelize, Sequelize),
-  Tag: require("./tag")(sequelize, Sequelize),
-  MultipleHierarchies: require("./multiple_hierarchies")(sequelize, Sequelize),
-  ModelTypes: require("./model_types")(sequelize, Sequelize),
-  Reporting: require("./reporting")(sequelize, Sequelize),
-  Reporting_Iframe: require("./reporting_iframe")(sequelize, Sequelize),
-  UserGroup: require("./user_group")(sequelize, Sequelize),
-  CustomWatermark: require("./custom_watermark")(sequelize, Sequelize),
-  // CustomerDetails: require("./customer_details")(sequelize, Sequelize),
-});
+// Don't import sequelize instance here, receive it as parameter
+module.exports = (sequelize) => {
+  // First, define all models
+  const models = {
+    Document: require("./document")(sequelize, Sequelize),
+    LocationMap: require("./location_map")(sequelize, Sequelize),
+    LocationType: require("./location_type")(sequelize, Sequelize),
+    DocumentType: require("./document_type")(sequelize, Sequelize),
+    DocumentTypeIndex: require("./document_index")(sequelize, Sequelize),
+    DocumentIndexValue: require("./document_index_values")(sequelize, Sequelize),
+    Language: require("./language")(sequelize, Sequelize),
+    DocumentCondition: require("./document_condition")(sequelize, Sequelize),
+    ApprovalMaster: require("./approval_master")(sequelize, Sequelize),
+    ApprovalQueue: require("./approval_queue")(sequelize, Sequelize),
+    Attachment: require("./attachment")(sequelize, Sequelize),
+    DocumentAudit: require("./document_audit")(sequelize, Sequelize),
+    SecurityLevel: require("./security_level")(sequelize, Sequelize),
+    DocumentAccessUser: require("./document_access_user")(sequelize, Sequelize),
+    DocumentCheckout: require("./document_checkout")(sequelize, Sequelize),
+    HourlyAccess: require("./hourly_access")(sequelize, Sequelize),
+    HourlyAccessMultiple: require("./hourly_access_multiple.js")(sequelize, Sequelize),
+    Watermark: require("./watermark")(sequelize, Sequelize),
+    Favourite: require("./favourite")(sequelize, Sequelize),
+    Tag: require("./tag")(sequelize, Sequelize),
+    MultipleHierarchies: require("./multiple_hierarchies")(sequelize, Sequelize),
+    ModelTypes: require("./model_types")(sequelize, Sequelize),
+    Reporting: require("./reporting")(sequelize, Sequelize),
+    Reporting_Iframe: require("./reporting_iframe")(sequelize, Sequelize),
+    UserGroup: require("./user_group")(sequelize, Sequelize),
+    CustomWatermark: require("./custom_watermark")(sequelize, Sequelize),
+  };
+
+  // Then define associations
+  const defineAssociations = require("../association/association");
+  defineAssociations(models);
+
+  // Finally export the models
+  return models;
+};

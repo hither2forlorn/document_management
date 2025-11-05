@@ -8,7 +8,7 @@ const { availableHierarchy } = require("../../util/hierarchyManage");
 const { createLog, constantLogType, findPreviousData } = require("../../util/logsManagement");
 const { execSelectQuery } = require("../../util/queryFunction");
 const isSuperAdmin = require("../sqlQuery/isSuperAdmin");
-
+const { Op } = require("sequelize");
 router.post("/document-type", validator(documentTypeValidation), auth.required, async (req, res, next) => {
   // To maintain log
   let log_query;
@@ -18,18 +18,27 @@ router.post("/document-type", validator(documentTypeValidation), auth.required, 
   req.body.hierarchy = isSuperAdmin(req.payload) ? req.body.hierarchy || "CONSTANT" : req.payload.hierarchy || "CONSTANT";
 
   req.body.parentId = req.body?.parentId == "" ? null : req.body?.parentId;
-  const query = `
-        select * from document_types dt where dt.isDeleted=0
-    and dt.name='${req.body?.name}'
-    ${req.body?.parentId || req.body?.parentId == "" ? `and dt.parentId='${req.body?.parentId}'` : ""}
-    ${
-      req.body?.hierarchy
-        ? `and dt.hierarchy='${req.payload.id == 1 ? req.body.hierarchy || "CONSTANT" : req.payload?.hierarchy}'`
-        : ""
-    }
-     `;
 
-  const checkDocTypeExists = await execSelectQuery(query);
+const whereConditions = {
+  isDeleted: 0,
+  name: req.body?.name
+};
+
+// Add parentId condition if provided and not empty string
+if (req.body?.parentId || req.body?.parentId === 0) {
+  whereConditions.parentId = req.body.parentId;
+}
+
+// Add hierarchy condition if provided
+if (req.body?.hierarchy) {
+  whereConditions.hierarchy = req.payload.id == 1 ? 
+    (req.body.hierarchy || "CONSTANT") : 
+    req.payload?.hierarchy;
+}
+
+const checkDocTypeExists = await DocumentType.findAll({
+  where: whereConditions
+});
 
   if (checkDocTypeExists.length > 0) {
     return res.json({

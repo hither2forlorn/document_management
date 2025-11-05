@@ -22,6 +22,8 @@ const {
   MultipleHierarchies,
   DocumentCheckout,
   User,
+  Branch,
+  SecurityHierarchy,
 } = require("../../config/database");
 const { uploadAttachment } = require("../util/bulk_upload");
 const Sequelize = require("sequelize");
@@ -80,19 +82,24 @@ router.get("/attachment/pagination", auth.required, async (req, res, next) => {
     let paginationDocument = await execSelectQuery(paginateQuery(req.query, false, req.payload));
     if (!req.payload.hierarchy.includes("Super")) {
       if (req.payload.branchId && req.payload.roleId !== 1) {
-        const userBranch = await execSelectQuery(`SELECT name FROM branches WHERE id=${req.payload.branchId}`);
+        const userBranch = await Branch.findOne({
+          attributes: ["name"],
+          where: {
+            id: req.payload.branchId,
+          },
+        });
         if (userBranch.length > 0) {
           const branchName = userBranch[0].name;
-          paginationDocument = paginationDocument.filter((doc) => doc.branch === branchName)
+          paginationDocument = paginationDocument.filter((doc) => doc.branch === branchName);
         } else {
-          paginationDocument = []
+          paginationDocument = [];
         }
       } else {
         const allowedBranches = await getAssociatedBranches(req.payload.departmentId);
-        const allowedBranchNames = allowedBranches.map(b => b.name);
-        paginationDocument = paginationDocument?.filter(doc => {
+        const allowedBranchNames = allowedBranches.map((b) => b.name);
+        paginationDocument = paginationDocument?.filter((doc) => {
           if (doc.branch === null || doc.branch === undefined) {
-            return doc.departmentId === req.payload.departmentId
+            return doc.departmentId === req.payload.departmentId;
           }
           return allowedBranchNames.includes(doc.branch);
         });
@@ -136,9 +143,11 @@ router.post("/attachment", auth.required, async (req, res, next) => {
       const attachments = [];
       let exit = false;
 
-      const isCheckerProcess = await execSelectQuery(`
-      select * from approval_masters am
-      where documentId = ${itemId}`);
+      const isCheckerProcess = await ApprovalMaster.findAll({
+  where: {
+    documentId: itemId
+  }
+});
 
       // restrict invalid file types
       const invalidFileTypes = [
@@ -231,7 +240,7 @@ router.post("/attachment", auth.required, async (req, res, next) => {
           } else {
             const attachmentsWithIds = attachments.map((attachment, index) => ({
               ...attachment,
-              id: attachmentIds[index] // Add the attachmentId from attachmentIds array
+              id: attachmentIds[index], // Add the attachmentId from attachmentIds array
             }));
             attachmentIds.forEach((attachmentId) => {
               Promise.all(
@@ -276,11 +285,9 @@ router.post("/attachment", auth.required, async (req, res, next) => {
           console.log(err);
           res.status(500).send({ message: "Error while uploading !! Rolling back " });
         });
-
     }
   });
 });
-
 
 //update attachment
 router.put("/attachment/:id", auth.required, async (req, res, next) => {
@@ -710,7 +717,6 @@ router.get("/attachment/download/:id/:cw", auth.required, (req, res, next) => {
 });
 
 router.get("/attachment/preview/:id/:cw", auth.required, async (req, res, next) => {
-
   const customWatermarkValue = req.params.cw || 14;
   checkFtp((isConnected) => {
     if (isConnected) {
@@ -794,10 +800,15 @@ router.get("/attachment/special-preview/:id", async (req, res, next) => {
     return;
   }
   // get hourlyaccess user
-  const userAccessEmail = await execSelectQuery(`
-        select * from hourly_access_multiples ham
-        join hourly_accesses ha on ha.id =ham.hourlyAccessId
-        where ha.id = ${decoded_id}`);
+  const userAccessEmail = await HourlyAccess.findOne({
+  where: {
+    id: decoded_id
+  },
+  include: [{
+    model: HourlyAccessMultiple,
+    as: 'hourlyAccessMultiples'
+  }]
+});
 
   checkFtp((isConnected) => {
     if (isConnected) {
@@ -987,7 +998,7 @@ router.get("/python", async (req, res, next) => {
   res.send({ success: true, data });
 });
 
-router.get("/test", async (req, res, next) => { });
+router.get("/test", async (req, res, next) => {});
 
 /**
  * @swagger
@@ -1006,20 +1017,24 @@ router.get("/test", async (req, res, next) => { });
  *      '201':
  *        description: Successfully created user
  */
-router.get("/execel", async (req, res, next) => {
+router.get("/excel", async (req, res, next) => {
   const fs = require("fs");
   const { parse } = require("csv-parse");
 
   fs.createReadStream("./indexUpdate.csv")
     .pipe(parse({ delimiter: ",", from_line: 2 }))
     .on("data", async function (row) {
-      const query = `
-      update security_hierarchies
-      set branchId =${row[2]} , type='${row[1]}'
-      where code ='${row[0]}'`;
-
-      await execUpdateQery(query);
-      // console.log(row[0], row[1]);
+      await SecurityHierarchy.update(
+        {
+          branchId: row[2],
+          type: row[1]
+        },
+        {
+          where: {
+            code: row[0]
+          }
+        }
+      );
     })
     .on("end", function () {
       console.log("finished");

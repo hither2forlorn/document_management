@@ -1,7 +1,7 @@
 const router = require("express").Router();
 const crypto = require("crypto");
-const NepaliDate = require('nepali-date-converter');
-const moment = require('moment-timezone');
+const NepaliDate = require("nepali-date-converter");
+const moment = require("moment-timezone");
 
 // const adbs = require('ad-bs-converter');
 // const oracledb = require("oracledb");
@@ -15,8 +15,7 @@ const Fuse = require("fuse.js");
 var jwt = require("jsonwebtoken");
 // For BOK CBS oracle database
 // const connection = require("../../config/oracle");
-
-const Op = require("sequelize").Op;
+const { Op, literal, where } = require('sequelize');
 const DocumentAuditModel = require("../models/document_audit");
 const Sequelize = require("sequelize");
 const {
@@ -43,6 +42,7 @@ const {
   ApprovalMaster,
   SecurityHierarchy,
   District,
+  Role,
 } = require("../../config/database");
 const _ = require("lodash");
 const { getBOKIDs, verifyBOKID, getCustomerDetails, getBOKIDsCBS } = require("../sqlQuery/bok-view");
@@ -142,9 +142,9 @@ router.post("/document", [validator(Docs), auth.required], auth.required, async 
   req.body.notificationUnit = req.body.notificationUnit || null;
 
   if (req.body.disposalDate) {
-    const date2 = new Date(req.body.disposalDate);  // Incoming date (likely from the frontend)
-    const date3 = new NepaliDate(date2);  // Convert the incoming date to Nepali date
-    const bsDate = date3.getBS();  // Get Nepali date
+    const date2 = new Date(req.body.disposalDate); // Incoming date (likely from the frontend)
+    const date3 = new NepaliDate(date2); // Convert the incoming date to Nepali date
+    const bsDate = date3.getBS(); // Get Nepali date
 
     // Adjust month for Nepali calendar (Nepali months are 1-indexed)
     bsDate.month = bsDate.month + 1;
@@ -153,24 +153,23 @@ router.post("/document", [validator(Docs), auth.required], auth.required, async 
 
     // Create the new Nepali formatted date (without converting to ISO)
     // const formattedDate = `${year}-${month}-${date}`;
-    const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+    const formattedDate = `${year}-${String(month).padStart(2, "0")}-${String(date).padStart(2, "0")}`;
 
     // Create a moment object from formatted Nepali date, setting current time
-    const currentDate = moment();  // Get current time in local time zone
+    const currentDate = moment(); // Get current time in local time zone
     const dateWithTime = moment.utc(formattedDate).set({
       hour: currentDate.hour(),
       minute: currentDate.minute(),
       second: currentDate.second(),
-      millisecond: currentDate.millisecond()
+      millisecond: currentDate.millisecond(),
     });
 
     // Convert the date to Kathmandu time zone (Asia/Kathmandu)
-    const kathmanduTime = dateWithTime.tz("Asia/Kathmandu").format('YYYY-MM-DD HH:mm:ss');
+    const kathmanduTime = dateWithTime.tz("Asia/Kathmandu").format("YYYY-MM-DD HH:mm:ss");
 
     // Assign the formatted Kathmandu date to the body
     req.body.disposalDateNP = kathmanduTime;
   }
-
 
   // Security hierarchy removed for rbb so manually added for future use
   // if (onlyForThisVendor(banks.rbb.name)) req.body.securityLevel = 2;
@@ -182,7 +181,12 @@ router.post("/document", [validator(Docs), auth.required], auth.required, async 
   } else {
     req.body.isApproved = false;
   }
-  const role = await execSelectQuery(`SELECT name from roles WHERE id = ${req.payload.roleId}`);
+const role = await Role.findOne({
+  attributes: ['name'],
+  where: {
+    id: req.payload.roleId
+  }
+});
   if (role[0].name === "System") {
     req.body.isApproved = true;
   }
@@ -283,7 +287,6 @@ router.get("/document/pagination", auth.required, async (req, res, next) => {
   });
 });
 
-
 router.get("/document", auth.required, async (req, res, next) => {
   const {
     // simpleText,
@@ -315,40 +318,40 @@ router.get("/document", auth.required, async (req, res, next) => {
     ...(isApproved ? { isApproved: true } : { isApproved: true }),
     ...(simpleText
       ? {
-        [Op.or]: [
-          { name: { [Op.like]: `%${simpleText}%` } },
-          { otherTitle: { [Op.like]: `%${simpleText}%` } },
-          { description: { [Op.like]: `%${simpleText}%` } },
-          { identifier: { [Op.like]: `%${simpleText}%` } },
-          { "$attachments.name$": { [Op.like]: `%${simpleText}%` } },
-          {
-            "$attachments.attachmentDescription$": {
-              [Op.like]: `%${simpleText}%`,
+          [Op.or]: [
+            { name: { [Op.like]: `%${simpleText}%` } },
+            { otherTitle: { [Op.like]: `%${simpleText}%` } },
+            { description: { [Op.like]: `%${simpleText}%` } },
+            { identifier: { [Op.like]: `%${simpleText}%` } },
+            { "$attachments.name$": { [Op.like]: `%${simpleText}%` } },
+            {
+              "$attachments.attachmentDescription$": {
+                [Op.like]: `%${simpleText}%`,
+              },
             },
-          },
-        ],
-      }
+          ],
+        }
       : {}),
     ...(documentTypeId || locationMapId || departmentId
       ? {
-        [Op.and]: [
-          documentTypeId
-            ? {
-              [Op.or]: documentTypeId ? documentTypes : [],
-            }
-            : {},
-          locationMapId
-            ? {
-              [Op.or]: locationMapId ? locationMaps : [],
-            }
-            : {},
-          departmentId
-            ? {
-              [Op.or]: departmentId ? departments : [],
-            }
-            : {},
-        ],
-      }
+          [Op.and]: [
+            documentTypeId
+              ? {
+                  [Op.or]: documentTypeId ? documentTypes : [],
+                }
+              : {},
+            locationMapId
+              ? {
+                  [Op.or]: locationMapId ? locationMaps : [],
+                }
+              : {},
+            departmentId
+              ? {
+                  [Op.or]: departmentId ? departments : [],
+                }
+              : {},
+          ],
+        }
       : {}),
   };
   if (expiryDate) {
@@ -524,138 +527,232 @@ router.get("/document/pending", auth.required, async (req, res, next) => {
 router.get("/document/notification", auth.required, async (req, res) => {
   const userId = req.payload.id;
 
-  // Subquery to calculate isExpiring and isExpired for reuse
-  const subqueryForNotifications = `
-    SELECT 
-      d.*, 
-      am.initiatorId,
-      am.assignedTo,
-      am.approverId,
-      CASE 
-        WHEN d.disposalDate IS NULL THEN 0
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) BETWEEN 0 AND 1)
-          )
-        THEN 1 ELSE 0
-      END AS isExpiring,
-      CASE 
-        WHEN d.disposalDate IS NULL THEN 0
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) <= 0)
-          )
-        THEN 1 ELSE 0
-      END AS isExpired,
-      CASE 
-        WHEN d.disposalDate IS NULL THEN CONCAT('Document notification unit: ', d.notificationUnit)
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) BETWEEN 0 AND 1)
-          )
-        THEN CONCAT('Document is expiring soon (Expiry date: ', FORMAT(d.disposalDate, 'yyyy-MM-dd HH:mm:ss'), ')')
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) <= 0)
-          )
-        THEN 'Document expired'
-        ELSE CONCAT('Document will expire in ', d.notificationUnit, ' (', FORMAT(d.disposalDate, 'yyyy-MM-dd HH:mm:ss'), ')')
-      END AS expiryMessage
-    FROM documents d
-    JOIN approval_masters am ON am.documentId = d.id
-    WHERE d.isDeleted = 0 AND d.isArchived = 0
-  `;
-
-  // Main query to handle notifications
-  const mainQuery = `
-    SELECT * 
-    FROM (${subqueryForNotifications}) AS notifications
-    WHERE 
-      (notifications.isExpiring = 1 OR notifications.isExpired = 1) OR
-      (
-        notifications.isApproved = 0 AND
-        notifications.isDeleted = 0 AND
-        notifications.isArchived = 0 AND
-        (
-          ((notifications.returnedByChecker  = 1 OR notifications.returnedByApprover = 1) AND notifications.initiatorId = ${userId}) OR
-          (notifications.sendToApprover = 1 AND notifications.approverId = ${userId}) OR
-          
-          (
-          (notifications.returnedByApprover = 1 AND notifications.assignedTo = ${userId}) AND
-          NOT (notifications.returnedByChecker = 1) 
-           ) OR
-          ( 
-          (notifications.sendToChecker = 1 AND notifications.assignedTo = ${userId}) AND
-           NOT (notifications.sendToApprover = 1) 
-          )
-        )
-      )
-    ORDER BY notifications.createdAt DESC
-  `;
-
-  // Count query for total notifications
-  const countQuery = `
-    SELECT COUNT(*) AS total
-    FROM (${subqueryForNotifications}) AS notifications
-    WHERE
-      (notifications.isExpiring = 1 OR notifications.isExpired = 1) OR
-      (
-        notifications.isApproved = 0 AND
-        notifications.isDeleted = 0 AND
-        notifications.isArchived = 0 AND
-        (
-          (notifications.returnedByApprover = 1 AND notifications.initiatorId = ${userId}) OR
-          (notifications.sendToApprover = 1 AND notifications.approverId = ${userId}) OR
-          (
-          (notifications.returnedByApprover = 1 AND notifications.assignedTo = ${userId}) AND
-          NOT (notifications.returnedByChecker = 1) 
-           ) OR
-
-          
-         ( 
-          (notifications.sendToChecker = 1 AND notifications.assignedTo = ${userId}) AND
-           NOT (notifications.sendToApprover = 1) 
-          )
-        )
-      )  
-  `;
-
   try {
-    const paginationDocument = await execSelectQuery(mainQuery);
-    const totalDocument = await execSelectQuery(countQuery);
+    // Define the expiry conditions using Sequelize literals
+    const isExpiringCondition = literal(`
+      CASE 
+        WHEN disposalDate IS NULL THEN 0
+        WHEN 
+          (
+            (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) BETWEEN 0 AND 2) OR
+            (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) BETWEEN 0 AND 2) OR
+            (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) BETWEEN 0 AND 1)
+          )
+        THEN 1 ELSE 0
+      END
+    `);
+
+    const isExpiredCondition = literal(`
+      CASE 
+        WHEN disposalDate IS NULL THEN 0
+        WHEN 
+          (
+            (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) <= 0) OR
+            (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) <= 0) OR
+            (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) <= 0)
+          )
+        THEN 1 ELSE 0
+      END
+    `);
+
+    // Main query for notifications
+    const paginationDocument = await Document.findAll({
+      attributes: {
+        include: [
+          [isExpiringCondition, 'isExpiring'],
+          [isExpiredCondition, 'isExpired'],
+          [literal(`CASE 
+            WHEN disposalDate IS NULL THEN CONCAT('Document notification unit: ', notificationUnit)
+            WHEN 
+              (
+                (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) BETWEEN 0 AND 2) OR
+                (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) BETWEEN 0 AND 2) OR
+                (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) BETWEEN 0 AND 1)
+              )
+            THEN CONCAT('Document is expiring soon (Expiry date: ', DATE_FORMAT(disposalDate, '%Y-%m-%d %H:%i:%s'), ')')
+            WHEN 
+              (
+                (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) <= 0) OR
+                (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) <= 0) OR
+                (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) <= 0)
+              )
+            THEN 'Document expired'
+            ELSE CONCAT('Document will expire in ', notificationUnit, ' (', DATE_FORMAT(disposalDate, '%Y-%m-%d %H:%i:%s'), ')')
+          END`), 'expiryMessage']
+        ]
+      },
+      include: [{
+        model: ApprovalMaster,
+        as: 'ApprovalMaster',
+        attributes: ['initiatorId', 'assignedTo', 'approverId'],
+        required: true
+      }],
+      where: {
+        [Op.and]: [
+          { isDeleted: 0 },
+          { isArchived: 0 },
+          {
+            [Op.or]: [
+              // Expiry conditions
+              where(isExpiringCondition, 1),
+              where(isExpiredCondition, 1),
+              // Approval workflow conditions
+              {
+                [Op.and]: [
+                  { isApproved: 0 },
+                  { isDeleted: 0 },
+                  { isArchived: 0 },
+                  {
+                    [Op.or]: [
+                      // Initiator conditions
+                      {
+                        [Op.and]: [
+                          { '$ApprovalMaster.initiatorId$': userId },
+                          {
+                            [Op.or]: [
+                              { returnedByChecker: 1 },
+                              { returnedByApprover: 1 }
+                            ]
+                          }
+                        ]
+                      },
+                      // Approver conditions
+                      {
+                        [Op.and]: [
+                          { '$ApprovalMaster.approverId$': userId },
+                          { sendToApprover: 1 }
+                        ]
+                      },
+                      // Checker conditions
+                      {
+                        [Op.and]: [
+                          { '$ApprovalMaster.assignedTo$': userId },
+                          {
+                            [Op.or]: [
+                              // Returned by approver to checker
+                              {
+                                [Op.and]: [
+                                  { returnedByApprover: 1 },
+                                  { returnedByChecker: 0 }
+                                ]
+                              },
+                              // Sent to checker (not to approver)
+                              {
+                                [Op.and]: [
+                                  { sendToChecker: 1 },
+                                  { sendToApprover: 0 }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      order: [['createdAt', 'DESC']],
+      raw: true
+    });
+
+    // Count query
+    const totalDocument = await Document.count({
+      include: [{
+        model: ApprovalMaster,
+        as: 'ApprovalMaster',
+        attributes: [],
+        required: true
+      }],
+      where: {
+        [Op.and]: [
+          { isDeleted: 0 },
+          { isArchived: 0 },
+          {
+            [Op.or]: [
+              where(isExpiringCondition, 1),
+              where(isExpiredCondition, 1),
+              {
+                [Op.and]: [
+                  { isApproved: 0 },
+                  { isDeleted: 0 },
+                  { isArchived: 0 },
+                  {
+                    [Op.or]: [
+                      {
+                        [Op.and]: [
+                          { '$ApprovalMaster.initiatorId$': userId },
+                          { returnedByApprover: 1 }
+                        ]
+                      },
+                      {
+                        [Op.and]: [
+                          { '$ApprovalMaster.approverId$': userId },
+                          { sendToApprover: 1 }
+                        ]
+                      },
+                      {
+                        [Op.and]: [
+                          { '$ApprovalMaster.assignedTo$': userId },
+                          {
+                            [Op.or]: [
+                              {
+                                [Op.and]: [
+                                  { returnedByApprover: 1 },
+                                  { returnedByChecker: 0 }
+                                ]
+                              },
+                              {
+                                [Op.and]: [
+                                  { sendToChecker: 1 },
+                                  { sendToApprover: 0 }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    });
 
     res.send({
       paginationDocument,
-      total: totalDocument[0]?.total,
+      total: totalDocument,
       user: req.payload,
       success: true,
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send({ message: "An error occurred while fetching notifications.", error: err });
+    res.status(500).send({ 
+      message: "An error occurred while fetching notifications.", 
+      error: err.message 
+    });
   }
 });
-
 
 router.get("/document/pending-pagination", auth.required, async (req, res, next) => {
   req.query.userId = req.payload.id;
 
   try {
     // Check if the user has Department Admin access (roleTypeId = 22)
-    const roleQuery = `
-      SELECT rc.roleTypeId
-      FROM users u
-      INNER JOIN role_controls rc ON u.roleId = rc.roleId
-      WHERE u.id = ${req.query.userId} AND rc.roleTypeId = 22 AND rc.value = 'true'
-    `;
+   const roleQuery = `
+  SELECT rc.roleTypeId
+  FROM users u
+  INNER JOIN role_controls rc ON u.roleId = rc.roleId
+  WHERE u.id = ? AND rc.roleTypeId = ? AND rc.value = ?
+`;
+const [rows] = await db.query(roleQuery, [req.query.userId, 22, 'true']);
+
 
     let [roleResult] = await execSelectQuery(roleQuery);
     const hasRoleTypeId = roleResult?.roleTypeId ? true : false; // True if user is Department Admin
@@ -891,48 +988,48 @@ router.post("/document/hourly-access", auth.required, (req, res, next) => {
     selectedUsers
       ? selectedUsers.length > 0
         ? selectedUsers.map((u) => {
-          return Promise.all([
-            HourlyAccess.create({
-              userId: u.value,
-              documentId,
-              attachmentId,
-              validTill,
-              token: token,
-            }),
+            return Promise.all([
+              HourlyAccess.create({
+                userId: u.value,
+                documentId,
+                attachmentId,
+                validTill,
+                token: token,
+              }),
 
-            hourlyAccess({
-              userId: u.value,
-              validTill,
-              url: previewUrl + token,
-              type: type,
-              attachmentId,
-            }),
-          ]);
-        })
+              hourlyAccess({
+                userId: u.value,
+                validTill,
+                url: previewUrl + token,
+                type: type,
+                attachmentId,
+              }),
+            ]);
+          })
         : ""
       : "",
 
     // for email users
     selectedEmails.join("").length > 0
       ? selectedEmails.map((email) => {
-        return Promise.all([
-          HourlyAccess.create({
-            userEmail: email,
-            documentId,
-            attachmentId,
-            validTill,
-            token: token,
-          }),
-          hourlyAccess({
-            userEmail: email,
-            validTill,
-            // url: previewUrl + token
-            url: otherUrl + token,
-            type: type,
-            attachmentId,
-          }),
-        ]);
-      })
+          return Promise.all([
+            HourlyAccess.create({
+              userEmail: email,
+              documentId,
+              attachmentId,
+              validTill,
+              token: token,
+            }),
+            hourlyAccess({
+              userEmail: email,
+              validTill,
+              // url: previewUrl + token
+              url: otherUrl + token,
+              type: type,
+              attachmentId,
+            }),
+          ]);
+        })
       : ""
   );
   res.send({ success: true, message: "Successful!" });
@@ -1055,12 +1152,13 @@ router.post("/document/approve", auth.required, validateUserApprove, async (req,
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
     //updated for verifyBy
-    await execUpdateQery(`
-    UPDATE documents 
-    SET 
-    ${userInput ? `  verifyBy = '${userInput}'` : ""} 
-    WHERE id = ${id}
-  `);
+   if (userInput) {
+  await Document.update(
+    { verifyBy: userInput }, // values to update
+    { where: { id } }        // condition
+  );
+}
+
     approveDocument(req.payload.id, req.body.id, (message) => {
       if (message.success) {
         auditDocument(req.body.id, req.payload.id, DocumentAuditModel.Approve, message.type);
@@ -1068,7 +1166,7 @@ router.post("/document/approve", auth.required, validateUserApprove, async (req,
       res.json(message || "failed");
     });
   } catch (error) {
-    console.log(error.message)
+    console.log(error.message);
   }
 });
 
@@ -1098,23 +1196,23 @@ router.post("/document/send-to-checker", auth.required, async (req, res, next) =
 
   // Dont send empty attachment to checker.
   Document.hasMany(Attachment, { foreignKey: "itemId", sourceKey: "id" });
-  const document = await Document.findOne({
-    where: { id },
+    const document = await Document.findOne({
+      where: { id },
     include: {
-      model: Attachment,
-      attributes: ["name", "attachmentDescription"],
+        model: Attachment,
+        attributes: ["name", "attachmentDescription"],
       where: {
         isDeleted: false,
       },
-      required: false,
+        required: false,
     },
-  });
+    });
 
   if (document.attachments.length == 0)
-    return res.json({
-      success: false,
-      message: "Please add attachment before sending to checker",
-    });
+      return res.json({
+        success: false,
+        message: "Please add attachment before sending to checker",
+      });
 
   await execUpdateQery(
     `update documents set sendToChecker=1, returnedByApprover=0 ${message ? `, description='${message}'` : ""}  where id =  ${id}`
@@ -1136,7 +1234,7 @@ router.post("/document/send-to-checker", auth.required, async (req, res, next) =
   res.json({
     success: true,
     message: "Successfully Sent to Checker",
-  });
+    });
 });
 
 router.post("/document/send-to-approver", auth.required, async (req, res, next) => {
@@ -1170,58 +1268,67 @@ router.post("/document/send-to-approver", auth.required, async (req, res, next) 
     }
 
     // Update document status to mark it as sent to the approver
-    await execUpdateQery(`
-      UPDATE documents 
-      SET sendToApprover = 1, returnedByApprover = 0
-      ${message ? `,  commentByChecker = '${message}'` : ""} 
-      WHERE id = ${id}
-    `);
+    // Replace all three execUpdateQery calls with this single ORM update
+const updateData = {
+  sendToApprover: 1,
+  returnedByApprover: 0,
+  checkedAt: new Date()
+};
 
+if (message) updateData.commentByChecker = message;
+if (checkerName) updateData.checkedBy = checkerName;
 
-    // Update document status to mark it as sent to the approver (checkerName)
-    await execUpdateQery(`
-      UPDATE documents 
-      SET sendToApprover = 1, returnedByApprover = 0
-      ${checkerName ? `,  checkedBy = '${checkerName}'` : ""} 
-      WHERE id = ${id}
-    `);
+await Document.update(updateData, {
+  where: { id: id }
+});
 
-    // Update chekedAt time  status to mark it as sent to the approver 
-    await execUpdateQery(`
-      UPDATE documents 
-      SET sendToApprover = 1, returnedByApprover = 0,
-      checkedAt = GETUTCDATE()
-      WHERE id = ${id}
-    `);
     // Retrieve or update the approval master for this document
-    const [approvalMaster] = await execSelectQuery(`
-      SELECT id, assignedTo 
-      FROM approval_masters 
-      WHERE documentId = ${id} 
-      AND type = 'document'
-    `);
+   // Use findAll since you're expecting an array result
+const approvalMasters = await ApprovalMaster.findAll({
+  attributes: ['id', 'assignedTo'],
+  where: {
+    documentId: id,
+    type: 'document'
+  }
+});
+
+// Then use array destructuring like your original code
+const [approvalMaster] = approvalMasters;
 
     if (approvalMaster) {
       // Update the approver assignment in approval_masters
-      await execUpdateQery(`
-        UPDATE approval_masters 
-        SET approverId = ${approverId} 
-        WHERE id = ${approvalMaster.id}
-      `);
+   await ApprovalMaster.update(
+  {
+    approverId: approverId
+  },
+  {
+    where: {
+      id: approvalMaster.id
+    }
+  }
+);
     } else {
-      // Insert a new approval master if not already present
-      await execInsertQuery(`
-      INSERT INTO approval_masters (documentId, type, assignedTo, approvalId, createdAt, updatedAt) 
-      VALUES (${id}, 'document', ${approverId}, ${approverId}, GETDATE(), GETDATE())`);
+      // Insert a new approval master if not already present - FIXED
+   await ApprovalMaster.create({
+  documentId: id,
+  type: 'document',
+  assignedTo: approverId,
+  approvalId: approverId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+});
     }
 
-    // Insert a new entry in `approval_queues` for the approver
-    await execInsertQuery(`
-      INSERT INTO approval_queues (approvalMasterId, isActive, level, userId, isApprover, createdAt, updatedAt)
-      VALUES (
-        ${approvalMaster.id}, 1, 2, ${approverId}, 1, GETDATE(), GETDATE()
-      );
-    `);
+    // Insert a new entry in `approval_queues` for the approver - FIXED
+    await ApprovalQueue.create({
+  approvalMasterId: approvalMaster.id,
+  isActive: 1,
+  level: 2,
+  userId: approverId,
+  isApprover: 1,
+  createdAt: new Date(),
+  updatedAt: new Date()
+});
 
     // Log the action
     await createLog(req, constantLogType.DOCUMENT, id, `Document sent to approver by checker`);
@@ -1239,7 +1346,6 @@ router.post("/document/send-to-approver", auth.required, async (req, res, next) 
     });
   }
 });
-
 
 router.get("/document/attachment-versioning-by-id", async (req, res) => {
   try {

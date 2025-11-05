@@ -15,9 +15,5 @@ module.exports = (sequelize, type) => {
       type: type.INTEGER,
       allowNull: true,
     },
-    hourlyAccessId: {
-      type: type.INTEGER,
-      allowNull: true,
-    },
   });
 };

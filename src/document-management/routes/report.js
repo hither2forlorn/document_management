@@ -1,8 +1,8 @@
 const { documentReportAll } = require("../util/report_query");
 const { SequelizeInstance } = require("../../config/database");
 const auth = require("../../config/auth");
+const logger = require("../../config/logger");
 const router = require("express").Router();
-
 router.get("/document/report/:type", auth.required, (req, res, next) => {
   const type = req.params.type;
   const userId = req.payload.id;

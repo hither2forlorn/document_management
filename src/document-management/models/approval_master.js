@@ -15,9 +15,6 @@ module.exports = (sequelize, type) => {
       type: type.BOOLEAN,
       defaultValue: false,
     },
-    documentId: {
-      type: type.INTEGER,
-    },
     initiatorId: {
       type: type.INTEGER,
     },
@@ -28,6 +25,9 @@ module.exports = (sequelize, type) => {
       type: type.INTEGER,
     },
     assignedTo: {
+      type: type.INTEGER,
+    },
+    approverId: {
       type: type.INTEGER,
     },
   });
