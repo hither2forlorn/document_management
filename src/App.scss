@@ -1,0 +1,188 @@
+// Styles
+// CoreUI Icons Set
+// @import "@coreui/icons/css/free.css";
+// Import Flag Icons Set
+@import "~flag-icon-css/css/flag-icon.min.css";
+// Import Font Awesome Icons Set
+@import "~font-awesome/css/font-awesome.min.css";
+// Import Simple Line Icons Set
+@import "~simple-line-icons/css/simple-line-icons.css";
+// Import Main styles for this application
+@import "./scss/style.scss";
+@import "antd/dist/antd.css";
+
+#pdf-download {
+  display: none;
+}
+
+.component-content-container {
+  -webkit-touch-callout: none;
+  /* iOS Safari */
+  -webkit-user-select: none;
+  /* Safari */
+  -khtml-user-select: none;
+  /* Konqueror HTML */
+  -moz-user-select: none;
+  /* Old versions of Firefox */
+  -ms-user-select: none;
+  /* Internet Explorer/Edge */
+  user-select: none;
+  /* Non-prefixed version, currently
+                                    supported by Chrome, Edge, Opera and Firefox */
+}
+
+.reviewBtn {
+  cursor: pointer;
+  outline: 0;
+  color: #fff;
+  background-color: #3c8dbc;
+  border-color: #3c8dbc;
+  display: inline-block;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
+  border: 1px solid transparent;
+  padding: 6px 12px;
+  font-size: 16px;
+  border-radius: 0.25rem;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out,
+    box-shadow 0.15s ease-in-out;
+
+  :hover {
+    color: #fff;
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+  }
+}
+
+option:disabled {
+  background: rgb(233, 233, 233);
+}
+
+.app-logo {
+  scale: 1.6;
+  margin-left: 25px;
+}
+
+.ant-menu-submenu-expand-icon,
+.ant-menu-submenu-arrow {
+  display: none;
+}
+
+.ant-menu-vertical .ant-menu-submenu-title {
+  height: 0px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+.watermarkSettings {
+  display: inline-block;
+}
+
+.watermark-columns {
+  display: flex;
+  flex-direction: column;
+}
+
+.baseHeaderLayout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.watermark-form {
+  margin: 0 auto;
+  padding: 0px 20px;
+  background-color: #f1f1f1;
+  border-radius: 5px;
+}
+
+.watermark-form label {
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+.watermark-form input[type="text"],
+.watermark-form select {
+  padding: 10px;
+  margin-bottom: 20px;
+  width: 100%;
+  border: none;
+  border-radius: 3px;
+  box-shadow: 0px 0px 3px #ccc;
+  font-size: 16px;
+}
+
+.watermark-form select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6' viewBox='0 0 12 6'%3E%3Cpath fill='%23999' d='M6 6L0 0h12z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.watermark-form input[type="file"] {
+  margin-bottom: 20px;
+}
+
+.watermark-form button[type="submit"] {
+  padding: 10px 20px;
+  border: none;
+  background-color: #2a7cff;
+  color: #fff;
+  border-radius: 3px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.watermark-form button[type="submit"]:hover {
+  background-color: #2a7cff;
+}
+
+.default-watermark-button {
+  background-color: #2a7cff;
+  /* Green */
+  border: none;
+  margin-left: 10px;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  outline: none;
+  display: inline-block;
+  font-size: 14px;
+}
+
+.license-marquee {
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  color: #333;
+  background-color: #f0f0f0;
+  padding: 10px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.modal-header {
+  background-color: #ccc;
+  color: #fff;
+}
+
+.modal-body {
+  font-size: 16px;
+}
+
+.red-text {
+  color: red;
+}
+
+.custom-modal-header {
+  background: rgb(0, 113, 217);
+  background: #9cecfb;
+  /* fallback for old browsers */
+  background: -webkit-linear-gradient(to left, #0052d4, #65c7f7, #9cecfb);
+  /* Chrome 10-25, Safari 5.1-6 */
+  background: linear-gradient(to left, #004bc3, #2a7cff, #90bbff);
+
+}

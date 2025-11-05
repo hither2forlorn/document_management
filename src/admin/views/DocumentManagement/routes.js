@@ -1,0 +1,18 @@
+export default {
+  documentsList: "/admin/documentList",
+  documentsPending: "/admin/pending",
+  documentsRejected: "/admin/rejected",
+  documentsSaved: "/admin/saved",
+  documentsExpiring: "/admin/expiring",
+  documentsArchived: "/admin/archived",
+  favouriteList: "/admin/favouriteList",
+  documentsCodeScanner: "/admin/code-scanner",
+  documentsPaperScanner: "/admin/paper-scanner",
+  documentsBulkUpload: "/admin/bulk-upload",
+  documentsAdd: "/admin/add",
+  documentsPreview: "/admin/preview",
+  documentsEdit: "/admin/edit",
+  documentsView: "/admin/view",
+  documentsRedaction: "/admin/redaction",
+  attachmentsList: "/admin/attachments",
+};

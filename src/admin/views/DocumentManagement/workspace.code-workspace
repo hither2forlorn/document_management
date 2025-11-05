@@ -1,0 +1,11 @@
+{
+    "folders": [
+		{
+			"path": "../../../../../general-dms-api"
+		},
+		{
+			"path": "../../../.."
+		}
+	],
+    "settings": {}
+}

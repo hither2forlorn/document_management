@@ -1,0 +1,24 @@
+// If you want to override variables do it here
+@import "variables";
+
+// Import styles
+@import "~@coreui/coreui/scss/coreui.scss";
+
+// Temp fix for reactstrap
+@import "~@coreui/coreui/scss/_dropdown-menu-right.scss";
+
+// If you want to add something do it here
+@import "custom";
+
+// Loading css
+@import "loading";
+
+// ie fixes
+@import "ie-fix";
+
+// Override some bootstrap classes
+@import "bootsrap-override";
+
+@import "form-builder/application.scss";
+// Admin LTE timeline
+@import "admin-lte-timeline";

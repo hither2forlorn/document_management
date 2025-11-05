@@ -1,0 +1,9 @@
+\node_modules
+
+\build
+\dist
+\docs
+
+.env
+debug.log
+.DS_Store

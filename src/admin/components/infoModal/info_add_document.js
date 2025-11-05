@@ -1,0 +1,26 @@
+export default {
+  Tags: "Tags can be used for creating custom search field  and identifying a document.",
+  Identifier: "Symbolize the document uniquely.",
+  "Document Name": "Determines the name of a document.",
+  "Expiry Date": "Denotes the expiry date of a created document.",
+  Language: "Denotes on which language is the document.",
+  "Document Condition": "Denotes the overall condition on a document.",
+  Status: "Denotes the status of the wholle document.",
+  "Location Map": "Identifies to which location the document belongs physically.",
+  Department: "Denotes the department of a document.",
+  "Security Level": "Determines the level of the security given to the document.",
+  "Security Level None":
+    "If selected, Document is will be created according to the security hierarchy of the logged-in user.",
+  "Security Level Low": "If selected, Document is can be accessed by everyone outside and inside the hierarchy.",
+  "Security Level Medium":
+    "If selected, Document is can be accessed by the specified departments only. i.e. works if the department user logs-in.",
+  "Security Level High": "If selected, Document is accessed by the selected users only for the user access field.",
+  Checker: "Denotes the checker required to approve the document.",
+  "Security Hierarchy": "Please seslect this for accessing the unit feature only.",
+  "Encryption Files": "If checked, Files in the document will be self encrypted.",
+  "Quick OCR": "If checked, Document will be enabled OCR feature.",
+  "OTP Verification": "If checked, OTP is required each time to access this document.",
+  "Archive Now": "If checked, The application will directly place it to archive section.",
+  "Document Type": "Denotes the type on a document.",
+  "Important Points": "* Determines the required fields.",
+};

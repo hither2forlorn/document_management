@@ -1,0 +1,13 @@
+.tag-cloud-item {
+    -webkit-transition: transform .2s ease!important;
+    -moz-transition: transform .2s ease!important;
+    -o-transition: transform .2s ease!important;
+    transition: transform .2s ease!important;
+}
+
+.tag-cloud-item:hover {
+    border: 1px solid black;
+    border-radius: 5px;
+    background: whitesmoke;
+    transform: scale(1.2);
+}

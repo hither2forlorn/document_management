@@ -1,0 +1,16 @@
+.form-control,
+select.form-control:not([size]):not([multiple]) {
+  height: calc(2rem + 2px);
+}
+.btn-sm.btn-header,
+.btn-group-sm > .btn.btn-header {
+  padding: 0.35rem 0.5rem;
+  line-height: 0;
+}
+
+.table th,
+.table td {
+  padding: 0.45rem 0.75rem;
+  vertical-align: top;
+  border-top: 1px solid #c8ced3;
+}
