@@ -1,0 +1,1 @@
+start javaw -Xmx200m -jar ‪C:\Users\gente\Downloads\metabase.jar

@@ -1,0 +1,6 @@
+PyPDF4
+pytesseract
+Pillow
+pdf2image
+cryptography
+reportlab

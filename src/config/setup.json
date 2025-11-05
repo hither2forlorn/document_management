@@ -1,0 +1,284 @@
+{
+  "roleTypes": [
+    {
+      "name": "User",
+      "key": "user"
+    },
+    {
+      "name": "Ldap User",
+      "key": "ldapUser"
+    },
+    {
+      "name": "Role",
+      "key": "role"
+    },
+    {
+      "name": "Branch",
+      "key": "branch"
+    },
+    {
+      "name": "Department",
+      "key": "department"
+    },
+    {
+      "name": "Document",
+      "key": "document"
+    },
+    {
+      "name": "Document Condition",
+      "key": "documentCondition"
+    },
+    {
+      "name": "Document Type",
+      "key": "documentType"
+    },
+    {
+      "name": "Location Map",
+      "key": "locationMap"
+    },
+    {
+      "name": "Location Type",
+      "key": "locationType"
+    },
+    {
+      "name": "Language",
+      "key": "language"
+    },
+    {
+      "name": "Attachment",
+      "key": "attachment"
+    },
+    {
+      "name": "Secuirty Hierarchy",
+      "key": "securityHierarchy"
+    },
+    {
+      "name": "Admin",
+      "key": "isAdmin",
+      "type": "boolean"
+    },
+    {
+      "name": "Download and print",
+      "key": "download",
+      "type": "boolean"
+    },
+    {
+      "name": "Archived",
+      "key": "archived",
+      "type": "boolean"
+    },
+    {
+      "name": "Checker",
+      "key": "checker",
+      "type": "boolean"
+    },
+    {
+      "name": "Maker",
+      "key": "maker",
+      "type": "boolean"
+    },
+    {
+      "name": "Scanning",
+      "key": "scanning",
+      "type": "boolean"
+    },
+    {
+      "name": "Reporting",
+      "key": "reporting",
+      "type": "boolean"
+    }
+  ],
+  "securityLevels": [
+    {
+      "value": 1,
+      "name": "Low",
+      "description": "Everyone who has authority to view the document can view this document."
+    },
+    {
+      "value": 2,
+      "name": "Medium",
+      "description": "Only the authorized department/library personnel can view this document."
+    },
+    {
+      "value": 3,
+      "name": "High",
+      "description": "Only the user who has authority to view this document can view."
+    },
+    {
+      "value": 4,
+      "name": "User Group",
+      "description": "Only the user who is added to a group can view."
+    }
+  ],
+  "security_hierarchies": [
+    {
+      "code": "Super-000",
+      "name": "Super Hierarchy",
+      "level": 0
+    },
+    {
+      "code": "Super-001",
+      "name": "Root Hierarchy",
+      "parentId": 1,
+      "level": 1
+    },
+    {
+      "code": "Head-002",
+      "name": "Head Branch",
+      "parentId": 2,
+      "level": 2
+    },
+    {
+      "code": "Central-002",
+      "name": "Central Office",
+      "parentId": 2,
+      "level": 2
+    },
+    {
+      "code": "Province_1",
+      "name": "Province 1",
+      "parentId": 3,
+      "level": 3
+    },
+    {
+      "code": "Province_2",
+      "name": "Madhesh Province",
+      "parentId": 3,
+      "level": 3
+    },
+    {
+      "code": "Bagmati_Province",
+      "name": "Bagmati Province",
+      "parentId": 3,
+      "level": 3
+    },
+    {
+      "code": "Gandaki_Province",
+      "name": "Gandaki Province",
+      "parentId": 3,
+      "level": 3
+    },
+    {
+      "code": "Lumbini_Province",
+      "name": "Lumbini Province",
+      "parentId": 3,
+      "level": 3
+    },
+    {
+      "code": "Karnali_Province",
+      "name": "Karnali Province",
+      "parentId": 3,
+      "level": 3
+    },
+    {
+      "code": "Sudurpashchim_Province",
+      "parentId": 3,
+      "name": "Sudurpashchim Province",
+      "level": 3
+    },
+    {
+      "code": "CONSTANT",
+      "parentId": 1,
+      "name": "CONSTANT",
+      "level": 1
+    }
+  ],
+  "users": [
+    {
+      "identityNo": "Super-Admin",
+      "identifier": "ADMIN",
+      "username": "admin",
+      "name": "Admin",
+      "email": "admin@gentech.com",
+      "password": "$2a$10$m1aQU66I/PsShAQtv5hVou0.xDQIreWdMFKxmG78kTi8tu8TcO4L6",
+      "isExpirePassword": false,
+      "role": {
+        "name": "Super Admin",
+        "isAdmin": true,
+        "isSuperAdmin": true
+      },
+      "department": {
+        "name": "Gentech"
+      },
+      "branch": {
+        "name": "Gentech"
+      }
+    }
+  ],
+  "locationTypes": [
+    {
+      "name": "Building"
+    },
+    {
+      "name": "Plot"
+    },
+    {
+      "name": "Container"
+    },
+    {
+      "name": "Floor"
+    },
+    {
+      "name": "Compartment"
+    },
+    {
+      "name": "Room"
+    }
+  ],
+  "modelTypes": [
+    {
+      "name": "DOCUMENT"
+    },
+    {
+      "name": "ATTACHMENT"
+    },
+    {
+      "name": "ROLES"
+    },
+    {
+      "name": "USER"
+    },
+    {
+      "name": "SECURITY_HIERARCHY"
+    },
+    {
+      "name": "LOCATION_MAP"
+    },
+    {
+      "name": "DOCUMENT_TYPES"
+    },
+    {
+      "name": "DOCUMENT_INDEX"
+    }
+  ],
+  "language": [
+    {
+      "name": "English",
+      "code": "ENG",
+      "createdBy": 1
+    },
+    {
+      "name": "Nepali",
+      "code": "NEP",
+      "createdBy": 1
+    }
+  ],
+  "document_condition": [
+    {
+      "name": "Great",
+      "createdBy": 1
+    },
+    {
+      "name": "Good",
+      "createdBy": 1
+    },
+    {
+      "name": "Poor",
+      "createdBy": 1
+    },
+    {
+      "name": "Torn",
+      "createdBy": 1
+    }
+  ]
+}
