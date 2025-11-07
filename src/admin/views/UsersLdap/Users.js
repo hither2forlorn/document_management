@@ -15,11 +15,50 @@ class Users extends Component {
     users: [],
     roles: [],
     departments: [],
-    isActive: true,
+    status: "active",
     searchQuery: "",
     currentPageNumber: 1,
     startOffset: 0,
   };
+
+  // Handle status filter change
+  handleStatusFilterChange = (e) => {
+  this.setState({
+    status: e.target.value,
+      currentPageNumber: 1, // Reset to first page
+    startOffset: 0,
+  });
+};
+
+// Get current status filter value
+getStatusFilterValue = () => {
+  return this.state.status;
+};
+
+shouldShowUser = (user) => {
+  const { status } = this.state;
+  
+  switch (status) {
+    case "active":
+      return user.isActive && !user.isDeleted;
+    case "inactive":
+      return !user.isActive && !user.isDeleted;
+    case "deleted":
+      return user.isDeleted;
+    default:
+      return true;
+  }
+};
+
+renderUserStatus = (user) => {
+  if (user.isDeleted) {
+    return <div className="badge badge-pill badge-danger">Deleted</div>;
+  } else if (user.isActive) {
+    return <div className="badge badge-pill badge-success">Active</div>;
+  } else {
+    return <div className="badge badge-pill badge-warning">Inactive</div>;
+  }
+};
 
   handleSelect = (number) => {
     if (number > 0 && number - 1 < this.state.users.length / 10) {
@@ -64,12 +103,18 @@ class Users extends Component {
   }
 
   handleSearch = (query) => {
-    this.setState({ searchQuery: query.target.value });
+    this.setState({  searchQuery: query.target.value,
+    currentPageNumber: 1,
+    startOffset: 0 });
   };
 
   render() {
     const PER_PAGE_SIZE = 10;
-    let TOTAL_PAGES = Math.ceil(this.state.users.length / PER_PAGE_SIZE);
+     const { searchQuery, users } = this.state;
+    const permissions = this.props.permissions ? this.props.permissions : {};
+    let filtered = users || [];
+    const statusFilteredUsers = filtered.filter(user => this.shouldShowUser(user));
+    let TOTAL_PAGES = Math.ceil(statusFilteredUsers.length / PER_PAGE_SIZE);
     // console.log(TOTAL_PAGES);
     const offset = 3;
     const start = this.state.currentPageNumber - offset <= 0 ? 0 : this.state.currentPageNumber - offset;
@@ -85,9 +130,6 @@ class Users extends Component {
       );
     }
 
-    const { searchQuery, users } = this.state;
-    const permissions = this.props.permissions ? this.props.permissions : {};
-    let filtered = users || [];
     
     // if (searchQuery) {
     //   console.log(searchQuery, users);
@@ -152,15 +194,12 @@ class Users extends Component {
                       <Input
                         className="w-75 mr-5  rounded"
                         type="select"
-                        value={this.state.isActive ? "active" : "inactive"}
-                        onChange={(e) =>
-                          this.setState({
-                            isActive: e.target.value === "active" ? true : false,
-                          })
-                        }
+                        value={this.getStatusFilterValue()}
+                        onChange={this.handleStatusFilterChange}
                       >
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
+                        <option value="deleted">Deleted</option>
                       </Input>
                     </div>
                     {permissions.isAdmin ||
@@ -192,55 +231,36 @@ class Users extends Component {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((user, index) => {
-                      if (index >= this.state.startOffset && index < this.state.startOffset + 10) {
-                        return user.isActive === this.state.isActive ? (
-                          <tr key={index}>
-                            <td>{user.name}</td>
-                            <td>{user.phoneNumber}</td>
-                            <td>{this.getObject(user.roleId, this.props.roles)}</td>
-
-                            <td>
-                              {user.isActive ? (
-                                <div className="badge badge-pill badge-success">Active</div>
-                              ) : (
-                                <div className="badge badge-pill badge-danger">Inactive</div>
-                              )}
-                            </td>
-                            <td>
-                              {permissions.isAdmin ||
-                              permissions.ldapUser === VIEW_EDIT ||
-                              permissions.ldapUser === VIEW_EDIT_DELETE ? (
-                                // <Link
-                                //   to={
-                                //     metaRoutes.adminLdapUsersEdit +
-                                //     "?i=" +
-                                //     A.getHash(user.id)
-                                //   }
-                                //   className="btn btn-primary btn-sm mr-2"
-                                // >
-                                //   <i className="fa fa-edit text-white" />
-                                // </Link>
-                                <CustomTableAction
-                                  to={metaRoutes.adminLdapUsersEdit + "?i=" + A.getHash(user.id)}
-                                  buttonType="edit"
-                                  permission={p.ldapUser}
-                                />
-                              ) : null}
-                              {permissions.ldapUser === VIEW_EDIT_DELETE || permissions.isAdmin ? (
-                                <CustomTableAction
-                                  buttonType="delete"
-                                  onClick={() => this.handleDelete(user.id)}
-                                  permission={p.ldapUser}
-                                />
-                              ) : null}
-                            </td>
-                          </tr>
-                        ) : null;
-                      }
-                      return null;
-                    })}
-                  </tbody>
+  {filtered
+    .filter(user => this.shouldShowUser(user)) // Apply status filter first
+    .slice(this.state.startOffset, this.state.startOffset + 10) // Then apply pagination
+    .map((user, index) => (
+      <tr key={user.id}>
+        <td>{user.name}</td>
+        <td>{user.phoneNumber}</td>
+        <td>{this.getObject(user.roleId, this.props.roles)}</td>
+        <td>{this.renderUserStatus(user)}</td>
+        <td>
+          {permissions.isAdmin ||
+          permissions.ldapUser === VIEW_EDIT ||
+          permissions.ldapUser === VIEW_EDIT_DELETE ? (
+            <CustomTableAction
+              to={metaRoutes.adminLdapUsersEdit + "?i=" + A.getHash(user.id)}
+              buttonType="edit"
+              permission={p.ldapUser}
+            />
+          ) : null}
+          {!user.isDeleted && (permissions.ldapUser === VIEW_EDIT_DELETE || permissions.isAdmin) ? (
+            <CustomTableAction
+              buttonType="delete"
+              onClick={() => this.handleDelete(user.id)}
+              permission={p.ldapUser}
+            />
+          ) : null}
+        </td>
+      </tr>
+    ))}
+</tbody>
                 </Table>
               </CardBody>
               <CardFooter>

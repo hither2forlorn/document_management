@@ -137,6 +137,7 @@ class AddUser extends Component {
       if (json) {
         this.props.history.push(metaRoutes.adminLdapUsers);
         this.setState({ isDisabled: true });
+        toast.success("Successfully Added User");
       }
     });
   };

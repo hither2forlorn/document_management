@@ -41,7 +41,7 @@ function getUser(id, callback) {
 
 function addUser(user, callback) {
   server
-    .post(`${url}`, JSON.stringify(user))
+    .post(`${url}`, user)
     .then(function (json) {
       callback(null, json.data);
     })
@@ -52,7 +52,7 @@ function addUser(user, callback) {
 
 function editUser(user, callback) {
   server
-    .put(`${url}/${user.id}`, JSON.stringify(user))
+    .put(`${url}/${user.id}`, user)
     .then(function (json) {
       callback(null, json.data);
     })
