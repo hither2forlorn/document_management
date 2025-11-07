@@ -24,6 +24,7 @@ const {
   User,
   Branch,
   SecurityHierarchy,
+  ApprovalMaster,
 } = require("../../config/database");
 const { uploadAttachment } = require("../util/bulk_upload");
 const Sequelize = require("sequelize");

@@ -143,7 +143,7 @@ router.get('/ad-users/ldap', async (req, res) => {
 
 router.get("/ad-users", auth.required, (req, res, next) => {
   User.findAll({
-    where: { isDeleted: false, type: USER_TYPE },
+    where: { type: USER_TYPE },
   })
     .then((users) => {
       const adUsers = users.filter((user) => user.distinguishedName != null);
@@ -167,37 +167,26 @@ router.get("/ad-users/:id", auth.required, (req, res, next) => {
 });
 
 router.put("/ad-users/:id", auth.required, (req, res, next) => {
-  let parsedBody = req.body;
-  if (typeof req.body === 'object') {
-    try {
-      const key = Object.keys(parsedBody)[0]
-      parsedBody = JSON.parse(String(key)); // Parse the stringified JSON key
-    } catch (err) {
-      console.error('Error parsing request body:', err.message);
-      return res.status(400).json({ error: 'Invalid request body format' });
-    }
-  }
-  parsedBody = {
-    ...parsedBody,
-    modifiedBy: req.body.createdBy || null,
-  };
+//  return console.log(req.body,":::::::::::::::::::::::::::::::::::::")
   const user = {
     type: USER_TYPE,
-    email: parsedBody.email ? parsedBody.email : "",
-    id: parsedBody.id ? parsedBody.id : "",
-    username: parsedBody.distinguishedName ? parsedBody.distinguishedName : "",
-    distinguishedName: parsedBody.distinguishedName ? parsedBody.distinguishedName : "",
-    name: (parsedBody.name ? parsedBody.name : ""),
-    phoneNumber: parsedBody.phoneNumber ? parsedBody.phoneNumber : "",
-    roleId: parsedBody.roleId ? parsedBody.roleId : "",
-    branchId: parsedBody.branchId ? parsedBody.branchId : "",
-    departmentId: parsedBody.departmentId ? parsedBody.departmentId : "",
-    loginAttempts: parsedBody.loginAttempts ? parsedBody.loginAttempts : "",
-    loginAttemptsCount: parsedBody.loginAttempts ? parsedBody.loginAttempts : "",
-    createdBy: parsedBody.createdBy ? parsedBody.createdBy : "",
+    email: req.body.email ? req.body.email : "",
+    id: req.body.id ? req.body.id : "",
+    username: req.body.distinguishedName ? req.body.distinguishedName : "",
+    distinguishedName: req.body.distinguishedName ? req.body.distinguishedName : "",
+    name: (req.body.name ? req.body.name : ""),
+    phoneNumber: req.body.phoneNumber ? req.body.phoneNumber : "",
+    roleId: req.body.roleId ? req.body.roleId : "",
+    branchId: req.body.branchId ? req.body.branchId : "",
+    departmentId: req.body.departmentId ? req.body.departmentId : "",
+    loginAttempts: req.body.loginAttempts ? req.body.loginAttempts : "",
+    loginAttemptsCount: req.body.loginAttempts ? req.body.loginAttempts : "",
+    createdBy: req.body.createdBy ? req.body.createdBy : "",
     isExpirePassword: false,
-    statusId: parsedBody.statusId ? parsedBody.statusId : 1,
-    hierarchy: parsedBody.hierarchy ? parsedBody.hierarchy : "",
+    statusId: req.body.statusId ? req.body.statusId : 1,
+    hierarchy: req.body.hierarchy ? req.body.hierarchy : "",
+    isActive:req.body.isActive ? req.body.isActive : "",
+    isDeleted:req.body.isActive ? false : "",
     editedBy: req.payload.id ? req.payload.id : "",
   };
   console.log("*****user update*******", user);
@@ -215,39 +204,30 @@ router.put("/ad-users/:id", auth.required, (req, res, next) => {
 });
 
 router.post("/ad-users", auth.required, async (req, res, next) => {
-  let parsedBody = req.body;
-  if (typeof req.body === 'object') {
-    try {
-      const key = Object.keys(parsedBody)[0]
-      parsedBody = JSON.parse(String(key)); // Parse the stringified JSON key
-    } catch (err) {
-      console.error('Error parsing request body:', err.message);
-      return res.status(400).json({ error: 'Invalid request body format' });
-    }
+
+  const userCountResult = await User.count({
+  where: {
+    isDeleted: 0
   }
-  parsedBody = {
-    ...parsedBody,
-    createdBy: req.body.createdBy || null,
-  };
-  const userCountResult = await execSelectQuery("SELECT COUNT(*) AS count FROM USERS WHERE isDeleted = 0");
+});
   const userCount = userCountResult[0]?.count;
   if (userCount <= 100) {
     const user = {
       type: USER_TYPE,
-      email: parsedBody.mail ? parsedBody.mail : "",
-      username: parsedBody.sAMAccountName ? parsedBody.sAMAccountName : "",
-      distinguishedName: parsedBody.sAMAccountName ? parsedBody.sAMAccountName : "",
-      name: (parsedBody.displayName ? parsedBody.displayName : ""),
-      phoneNumber: parsedBody.telephoneNumber ? parsedBody.telephoneNumber : "",
-      roleId: parsedBody.roleId ? parsedBody.roleId : "",
-      branchId: parsedBody.branchId ? parsedBody.branchId : "",
-      departmentId: parsedBody.departmentId ? parsedBody.departmentId : "",
-      loginAttempts: parsedBody.loginAttempts ? parsedBody.loginAttempts : "",
-      loginAttemptsCount: parsedBody.loginAttempts ? parsedBody.loginAttempts : "",
-      createdBy: parsedBody.createdBy ? parsedBody.createdBy : "",
+      email: req.body.mail ? req.body.mail : "",
+      username: req.body.sAMAccountName ? req.body.sAMAccountName : "",
+      distinguishedName: req.body.sAMAccountName ? req.body.sAMAccountName : "",
+      name: (req.body.displayName ? req.body.displayName : ""),
+      phoneNumber: req.body.telephoneNumber ? req.body.telephoneNumber : "",
+      roleId: req.body.roleId ? req.body.roleId : "",
+      branchId: req.body.branchId ? req.body.branchId : "",
+      departmentId: req.body.departmentId ? req.body.departmentId : "",
+      loginAttempts: req.body.loginAttempts ? req.body.loginAttempts : "",
+      loginAttemptsCount: req.body.loginAttempts ? req.body.loginAttempts : "",
+      createdBy: req.body.createdBy ? req.body.createdBy : "",
       isExpirePassword: false,
-      statusId: parsedBody.statusId ? parsedBody.statusId : 1,
-      hierarchy: parsedBody.hierarchy ? parsedBody.hierarchy : "",
+      statusId: req.body.statusId ? req.body.statusId : 1,
+      hierarchy: req.body.hierarchy ? req.body.hierarchy : "",
     };
     User.create(user)
       .then((_) => res.send(true))
@@ -262,9 +242,11 @@ router.post("/ad-users", auth.required, async (req, res, next) => {
 });
 
 router.delete("/ad-users/:id", auth.required, (req, res, next) => {
+
   User.update(
     {
       isDeleted: true,
+      isActive:false
     },
     {
       where: { id: req.params.id, type: USER_TYPE },

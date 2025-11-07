@@ -15,7 +15,7 @@ const Fuse = require("fuse.js");
 var jwt = require("jsonwebtoken");
 // For BOK CBS oracle database
 // const connection = require("../../config/oracle");
-const { Op, literal, where } = require('sequelize');
+const {Op} = require('sequelize');
 const DocumentAuditModel = require("../models/document_audit");
 const Sequelize = require("sequelize");
 const {
@@ -43,6 +43,7 @@ const {
   SecurityHierarchy,
   District,
   Role,
+  ApprovalQueue,
 } = require("../../config/database");
 const _ = require("lodash");
 const { getBOKIDs, verifyBOKID, getCustomerDetails, getBOKIDsCBS } = require("../sqlQuery/bok-view");
@@ -187,7 +188,7 @@ const role = await Role.findOne({
     id: req.payload.roleId
   }
 });
-  if (role[0].name === "System") {
+  if (role[0]?.name === "System") {
     req.body.isApproved = true;
   }
   Document.create(req.body, {
@@ -527,216 +528,123 @@ router.get("/document/pending", auth.required, async (req, res, next) => {
 router.get("/document/notification", auth.required, async (req, res) => {
   const userId = req.payload.id;
 
+  // Subquery to calculate isExpiring and isExpired for reuse
+  const subqueryForNotifications = `
+    SELECT 
+      d.*, 
+      am.initiatorId,
+      am.assignedTo,
+      am.approverId,
+      CASE 
+        WHEN d.disposalDate IS NULL THEN 0
+        WHEN 
+          (
+            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
+            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
+            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) BETWEEN 0 AND 1)
+          )
+        THEN 1 ELSE 0
+      END AS isExpiring,
+      CASE 
+        WHEN d.disposalDate IS NULL THEN 0
+        WHEN 
+          (
+            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) <= 0) OR
+            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) <= 0) OR
+            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) <= 0)
+          )
+        THEN 1 ELSE 0
+      END AS isExpired,
+      CASE 
+        WHEN d.disposalDate IS NULL THEN CONCAT('Document notification unit: ', d.notificationUnit)
+        WHEN 
+          (
+            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
+            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
+            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) BETWEEN 0 AND 1)
+          )
+        THEN CONCAT('Document is expiring soon (Expiry date: ', FORMAT(d.disposalDate, 'yyyy-MM-dd HH:mm:ss'), ')')
+        WHEN 
+          (
+            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) <= 0) OR
+            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) <= 0) OR
+            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) <= 0)
+          )
+        THEN 'Document expired'
+        ELSE CONCAT('Document will expire in ', d.notificationUnit, ' (', FORMAT(d.disposalDate, 'yyyy-MM-dd HH:mm:ss'), ')')
+      END AS expiryMessage
+    FROM documents d
+    JOIN approval_masters am ON am.documentId = d.id
+    WHERE d.isDeleted = 0 AND d.isArchived = 0
+  `;
+
+  // Main query to handle notifications
+  const mainQuery = `
+    SELECT * 
+    FROM (${subqueryForNotifications}) AS notifications
+    WHERE 
+      (notifications.isExpiring = 1 OR notifications.isExpired = 1) OR
+      (
+        notifications.isApproved = 0 AND
+        notifications.isDeleted = 0 AND
+        notifications.isArchived = 0 AND
+        (
+          ((notifications.returnedByChecker  = 1 OR notifications.returnedByApprover = 1) AND notifications.initiatorId = ${userId}) OR
+          (notifications.sendToApprover = 1 AND notifications.approverId = ${userId}) OR
+          
+          (
+          (notifications.returnedByApprover = 1 AND notifications.assignedTo = ${userId}) AND
+          NOT (notifications.returnedByChecker = 1) 
+           ) OR
+          ( 
+          (notifications.sendToChecker = 1 AND notifications.assignedTo = ${userId}) AND
+           NOT (notifications.sendToApprover = 1) 
+          )
+        )
+      )
+    ORDER BY notifications.createdAt DESC
+  `;
+
+  // Count query for total notifications
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM (${subqueryForNotifications}) AS notifications
+    WHERE
+      (notifications.isExpiring = 1 OR notifications.isExpired = 1) OR
+      (
+        notifications.isApproved = 0 AND
+        notifications.isDeleted = 0 AND
+        notifications.isArchived = 0 AND
+        (
+          (notifications.returnedByApprover = 1 AND notifications.initiatorId = ${userId}) OR
+          (notifications.sendToApprover = 1 AND notifications.approverId = ${userId}) OR
+          (
+          (notifications.returnedByApprover = 1 AND notifications.assignedTo = ${userId}) AND
+          NOT (notifications.returnedByChecker = 1) 
+           ) OR
+
+          
+         ( 
+          (notifications.sendToChecker = 1 AND notifications.assignedTo = ${userId}) AND
+           NOT (notifications.sendToApprover = 1) 
+          )
+        )
+      )  
+  `;
+
   try {
-    // Define the expiry conditions using Sequelize literals
-    const isExpiringCondition = literal(`
-      CASE 
-        WHEN disposalDate IS NULL THEN 0
-        WHEN 
-          (
-            (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) BETWEEN 0 AND 2) OR
-            (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) BETWEEN 0 AND 2) OR
-            (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) BETWEEN 0 AND 1)
-          )
-        THEN 1 ELSE 0
-      END
-    `);
-
-    const isExpiredCondition = literal(`
-      CASE 
-        WHEN disposalDate IS NULL THEN 0
-        WHEN 
-          (
-            (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) <= 0) OR
-            (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) <= 0) OR
-            (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) <= 0)
-          )
-        THEN 1 ELSE 0
-      END
-    `);
-
-    // Main query for notifications
-    const paginationDocument = await Document.findAll({
-      attributes: {
-        include: [
-          [isExpiringCondition, 'isExpiring'],
-          [isExpiredCondition, 'isExpired'],
-          [literal(`CASE 
-            WHEN disposalDate IS NULL THEN CONCAT('Document notification unit: ', notificationUnit)
-            WHEN 
-              (
-                (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) BETWEEN 0 AND 2) OR
-                (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) BETWEEN 0 AND 2) OR
-                (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) BETWEEN 0 AND 1)
-              )
-            THEN CONCAT('Document is expiring soon (Expiry date: ', DATE_FORMAT(disposalDate, '%Y-%m-%d %H:%i:%s'), ')')
-            WHEN 
-              (
-                (notificationUnit = 'hr' AND TIMESTAMPDIFF(HOUR, NOW(), disposalDate) <= 0) OR
-                (notificationUnit = 'day' AND DATEDIFF(disposalDate, NOW()) <= 0) OR
-                (notificationUnit = 'week' AND TIMESTAMPDIFF(WEEK, NOW(), disposalDate) <= 0)
-              )
-            THEN 'Document expired'
-            ELSE CONCAT('Document will expire in ', notificationUnit, ' (', DATE_FORMAT(disposalDate, '%Y-%m-%d %H:%i:%s'), ')')
-          END`), 'expiryMessage']
-        ]
-      },
-      include: [{
-        model: ApprovalMaster,
-        as: 'ApprovalMaster',
-        attributes: ['initiatorId', 'assignedTo', 'approverId'],
-        required: true
-      }],
-      where: {
-        [Op.and]: [
-          { isDeleted: 0 },
-          { isArchived: 0 },
-          {
-            [Op.or]: [
-              // Expiry conditions
-              where(isExpiringCondition, 1),
-              where(isExpiredCondition, 1),
-              // Approval workflow conditions
-              {
-                [Op.and]: [
-                  { isApproved: 0 },
-                  { isDeleted: 0 },
-                  { isArchived: 0 },
-                  {
-                    [Op.or]: [
-                      // Initiator conditions
-                      {
-                        [Op.and]: [
-                          { '$ApprovalMaster.initiatorId$': userId },
-                          {
-                            [Op.or]: [
-                              { returnedByChecker: 1 },
-                              { returnedByApprover: 1 }
-                            ]
-                          }
-                        ]
-                      },
-                      // Approver conditions
-                      {
-                        [Op.and]: [
-                          { '$ApprovalMaster.approverId$': userId },
-                          { sendToApprover: 1 }
-                        ]
-                      },
-                      // Checker conditions
-                      {
-                        [Op.and]: [
-                          { '$ApprovalMaster.assignedTo$': userId },
-                          {
-                            [Op.or]: [
-                              // Returned by approver to checker
-                              {
-                                [Op.and]: [
-                                  { returnedByApprover: 1 },
-                                  { returnedByChecker: 0 }
-                                ]
-                              },
-                              // Sent to checker (not to approver)
-                              {
-                                [Op.and]: [
-                                  { sendToChecker: 1 },
-                                  { sendToApprover: 0 }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      order: [['createdAt', 'DESC']],
-      raw: true
-    });
-
-    // Count query
-    const totalDocument = await Document.count({
-      include: [{
-        model: ApprovalMaster,
-        as: 'ApprovalMaster',
-        attributes: [],
-        required: true
-      }],
-      where: {
-        [Op.and]: [
-          { isDeleted: 0 },
-          { isArchived: 0 },
-          {
-            [Op.or]: [
-              where(isExpiringCondition, 1),
-              where(isExpiredCondition, 1),
-              {
-                [Op.and]: [
-                  { isApproved: 0 },
-                  { isDeleted: 0 },
-                  { isArchived: 0 },
-                  {
-                    [Op.or]: [
-                      {
-                        [Op.and]: [
-                          { '$ApprovalMaster.initiatorId$': userId },
-                          { returnedByApprover: 1 }
-                        ]
-                      },
-                      {
-                        [Op.and]: [
-                          { '$ApprovalMaster.approverId$': userId },
-                          { sendToApprover: 1 }
-                        ]
-                      },
-                      {
-                        [Op.and]: [
-                          { '$ApprovalMaster.assignedTo$': userId },
-                          {
-                            [Op.or]: [
-                              {
-                                [Op.and]: [
-                                  { returnedByApprover: 1 },
-                                  { returnedByChecker: 0 }
-                                ]
-                              },
-                              {
-                                [Op.and]: [
-                                  { sendToChecker: 1 },
-                                  { sendToApprover: 0 }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    });
+    const paginationDocument = await execSelectQuery(mainQuery);
+    const totalDocument = await execSelectQuery(countQuery);
 
     res.send({
       paginationDocument,
-      total: totalDocument,
+      total: totalDocument[0]?.total,
       user: req.payload,
       success: true,
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send({ 
-      message: "An error occurred while fetching notifications.", 
-      error: err.message 
-    });
+    res.status(500).send({ message: "An error occurred while fetching notifications.", error: err });
   }
 });
 
@@ -749,10 +657,8 @@ router.get("/document/pending-pagination", auth.required, async (req, res, next)
   SELECT rc.roleTypeId
   FROM users u
   INNER JOIN role_controls rc ON u.roleId = rc.roleId
-  WHERE u.id = ? AND rc.roleTypeId = ? AND rc.value = ?
+  WHERE u.id = ${req.query.userId} AND rc.roleTypeId = 22 AND rc.value = 'true'
 `;
-const [rows] = await db.query(roleQuery, [req.query.userId, 22, 'true']);
-
 
     let [roleResult] = await execSelectQuery(roleQuery);
     const hasRoleTypeId = roleResult?.roleTypeId ? true : false; // True if user is Department Admin
@@ -1320,7 +1226,7 @@ const [approvalMaster] = approvalMasters;
     }
 
     // Insert a new entry in `approval_queues` for the approver - FIXED
-    await ApprovalQueue.create({
+  await ApprovalQueue.create({
   approvalMasterId: approvalMaster.id,
   isActive: 1,
   level: 2,
