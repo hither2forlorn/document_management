@@ -31,37 +31,10 @@ module.exports = (sequelize, type) => {
     otherTitle: {
       type: type.STRING,
     },
-    madeBy: {
-      type: type.STRING,
-    },
-    checkedBy: {
-      type: type.STRING,
-    },
-    verifyBy: {
-      type: type.STRING,
-    },
     description: {
       type: type.TEXT,
     },
-    commentByChecker:{
-      type: type.STRING,
-    },
     disposalDate: {
-      type: type.DATE,
-    },
-    disposalDateNP: {
-      type: type.DATE,
-    },
-    // rejectionDateByApprover
-    rejectionDateOfApprover: {
-      type: type.DATE,
-    },
-    // rejectionDateByChecker
-    rejectionDateOfChecker: {
-      type: type.DATE,
-    },
-     // checkedAt
-     checkedAt: {
       type: type.DATE,
     },
     documentTypeId: {
@@ -125,11 +98,7 @@ module.exports = (sequelize, type) => {
     returnedByChecker: {
       type: type.BOOLEAN,
     },
-    rejectionMessageByChecker: {
-      type: type.STRING,
-    },
-    //to add rejection message of checker
-    rejectionMessageByApprover: {
+    returnedMessage: {
       type: type.STRING,
     },
     sendToChecker: {
@@ -142,20 +111,8 @@ module.exports = (sequelize, type) => {
     userGroupId: {
       type: type.INTEGER,
     },
-    notification: {
-      type: type.INTEGER,
-    },
-    notificationUnit: {
+    cifNumber: {
       type: type.STRING,
-      validate: {
-        isIn: [["hr", "day", "week"]],
-      },
     },
-    returnedByApprover:{
-      type: type.BOOLEAN,
-    },
-    sendToApprover:{
-      type: type.BOOLEAN,
-    }
   });
 };

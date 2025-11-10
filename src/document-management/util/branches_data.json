@@ -1,0 +1,687 @@
+[
+  {
+    "id": 1,
+    "name": "Gentech",
+    "branchCode": null
+  },
+  {
+    "id": 3,
+    "name": "BANESHWOR BRANCH",
+    "branchCode": "0010"
+  },
+  {
+    "id": 4,
+    "name": "SINGHADURBAR COUNTER BRANCH",
+    "branchCode": "0012"
+  },
+  {
+    "id": 5,
+    "name": "NEWROAD BRANCH",
+    "branchCode": "0020"
+  },
+  {
+    "id": 6,
+    "name": "SATUNGAL BRANCH",
+    "branchCode": "0030"
+  },
+  {
+    "id": 7,
+    "name": "BUTWAL BRANCH",
+    "branchCode": "0040"
+  },
+  {
+    "id": 8,
+    "name": "BUTWAL EXTENSION COUNTER BRANCH",
+    "branchCode": "0041"
+  },
+  {
+    "id": 9,
+    "name": "BHAIRAHAWA BRANCH",
+    "branchCode": "0050"
+  },
+  {
+    "id": 10,
+    "name": "BIRGUNJ BRANCH",
+    "branchCode": "0060"
+  },
+  {
+    "id": 11,
+    "name": "SIMARA BRANCH",
+    "branchCode": "0070"
+  },
+  {
+    "id": 12,
+    "name": "BIRATNAGAR BRANCH",
+    "branchCode": "0080"
+  },
+  {
+    "id": 13,
+    "name": "DUHABI BRANCH",
+    "branchCode": "0090"
+  },
+  {
+    "id": 14,
+    "name": "TEKU BRANCH",
+    "branchCode": "0100"
+  },
+  {
+    "id": 15,
+    "name": "DHANGADHI BRANCH",
+    "branchCode": "0110"
+  },
+  {
+    "id": 16,
+    "name": "ATTARIYA BRANCH",
+    "branchCode": "0111"
+  },
+  {
+    "id": 17,
+    "name": "PULCHOWK BRANCH",
+    "branchCode": "0120"
+  },
+  {
+    "id": 18,
+    "name": "MANGALBAZAR EXT. COUNTER BRANCH",
+    "branchCode": "0121"
+  },
+  {
+    "id": 19,
+    "name": "JANAKPUR BRANCH",
+    "branchCode": "0130"
+  },
+  {
+    "id": 20,
+    "name": "LAZIMPAT BRANCH",
+    "branchCode": "0140"
+  },
+  {
+    "id": 21,
+    "name": "ICD BRANCH",
+    "branchCode": "0150"
+  },
+  {
+    "id": 22,
+    "name": "POKHARA BRANCH",
+    "branchCode": "0160"
+  },
+  {
+    "id": 23,
+    "name": "POKHARA EXTENSION COUNTER BRANCH",
+    "branchCode": "0161"
+  },
+  {
+    "id": 24,
+    "name": "ITAHARI BRANCH",
+    "branchCode": "0170"
+  },
+  {
+    "id": 25,
+    "name": "BIRATCHOWK BRANCH",
+    "branchCode": "0171"
+  },
+  {
+    "id": 26,
+    "name": "CHABAHIL BRANCH",
+    "branchCode": "0180"
+  },
+  {
+    "id": 27,
+    "name": "NEPALGUNJ BRANCH",
+    "branchCode": "0190"
+  },
+  {
+    "id": 28,
+    "name": "KOHALPUR BRANCH",
+    "branchCode": "0191"
+  },
+  {
+    "id": 29,
+    "name": "BALAJU BRANCH",
+    "branchCode": "0200"
+  },
+  {
+    "id": 30,
+    "name": "BIRTAMOD BRANCH",
+    "branchCode": "0210"
+  },
+  {
+    "id": 31,
+    "name": "DAMAK BRANCH",
+    "branchCode": "0211"
+  },
+  {
+    "id": 32,
+    "name": "FIKKAL BRANCH",
+    "branchCode": "0212"
+  },
+  {
+    "id": 33,
+    "name": "BAGLUNG BRANCH",
+    "branchCode": "0220"
+  },
+  {
+    "id": 34,
+    "name": "GWARKO BRANCH",
+    "branchCode": "0230"
+  },
+  {
+    "id": 35,
+    "name": "LEKHNATH BRANCH",
+    "branchCode": "0240"
+  },
+  {
+    "id": 36,
+    "name": "NARAYANGARH BRANCH",
+    "branchCode": "0250"
+  },
+  {
+    "id": 37,
+    "name": "PARSA BRANCH",
+    "branchCode": "0251"
+  },
+  {
+    "id": 38,
+    "name": "BHAKTAPUR BRANCH",
+    "branchCode": "260"
+  },
+  {
+    "id": 39,
+    "name": "BESHISAHAR BRANCH",
+    "branchCode": "270"
+  },
+  {
+    "id": 40,
+    "name": "GOLFUTAR BRANCH",
+    "branchCode": "280"
+  },
+  {
+    "id": 41,
+    "name": "KIRTIPUR BRANCH",
+    "branchCode": "290"
+  },
+  {
+    "id": 42,
+    "name": "KUSHMA BRANCH",
+    "branchCode": "300"
+  },
+  {
+    "id": 43,
+    "name": "SURKHET BRANCH",
+    "branchCode": "310"
+  },
+  {
+    "id": 44,
+    "name": "LAGANKHEL BRANCH",
+    "branchCode": "320"
+  },
+  {
+    "id": 45,
+    "name": "TULSIPUR BRANCH",
+    "branchCode": "330"
+  },
+  {
+    "id": 46,
+    "name": "MAITIDEVI BRANCH",
+    "branchCode": "340"
+  },
+  {
+    "id": 47,
+    "name": "THAMEL BRANCH",
+    "branchCode": "350"
+  },
+  {
+    "id": 48,
+    "name": "TATOPANI BRANCH",
+    "branchCode": "360"
+  },
+  {
+    "id": 49,
+    "name": "KALIMATI BRANCH",
+    "branchCode": "370"
+  },
+  {
+    "id": 50,
+    "name": "TAULIHAWA BRANCH",
+    "branchCode": "380"
+  },
+  {
+    "id": 51,
+    "name": "SANDHIKHARKA BRANCH",
+    "branchCode": "390"
+  },
+  {
+    "id": 52,
+    "name": "KRISHNANAGAR BRANCH",
+    "branchCode": "400"
+  },
+  {
+    "id": 53,
+    "name": "CHANDRAUTA BRANCH",
+    "branchCode": "401"
+  },
+  {
+    "id": 54,
+    "name": "LUMBINI BRANCH",
+    "branchCode": "410"
+  },
+  {
+    "id": 55,
+    "name": "HETAUDA BRANCH",
+    "branchCode": "420"
+  },
+  {
+    "id": 56,
+    "name": "GORKHA BRANCH",
+    "branchCode": "430"
+  },
+  {
+    "id": 57,
+    "name": "BAGBAZAR BRANCH",
+    "branchCode": "440"
+  },
+  {
+    "id": 58,
+    "name": "SYANGJA BRANCH",
+    "branchCode": "450"
+  },
+  {
+    "id": 59,
+    "name": "CHANDRANIGAHAPUR BRANCH",
+    "branchCode": "460"
+  },
+  {
+    "id": 60,
+    "name": "GARUDA BRANCH",
+    "branchCode": "461"
+  },
+  {
+    "id": 61,
+    "name": "RAJBIRAJ BRANCH",
+    "branchCode": "470"
+  },
+  {
+    "id": 62,
+    "name": "KANCHANPUR BRANCH",
+    "branchCode": "471"
+  },
+  {
+    "id": 63,
+    "name": "GONGABU BRANCH",
+    "branchCode": "480"
+  },
+  {
+    "id": 64,
+    "name": "GULARIYA BRANCH",
+    "branchCode": "490"
+  },
+  {
+    "id": 65,
+    "name": "TIKAPUR BRANCH",
+    "branchCode": "500"
+  },
+  {
+    "id": 66,
+    "name": "LAMKI BRANCH",
+    "branchCode": "501"
+  },
+  {
+    "id": 67,
+    "name": "BHOJPUR BRANCH",
+    "branchCode": "510"
+  },
+  {
+    "id": 68,
+    "name": "DHADING BRANCH",
+    "branchCode": "520"
+  },
+  {
+    "id": 69,
+    "name": "BAGDOL BRANCH",
+    "branchCode": "530"
+  },
+  {
+    "id": 70,
+    "name": "BAJHANG BRANCH",
+    "branchCode": "540"
+  },
+  {
+    "id": 71,
+    "name": "RUKUM BRANCH",
+    "branchCode": "550"
+  },
+  {
+    "id": 72,
+    "name": "LAMAHI BRANCH",
+    "branchCode": "560"
+  },
+  {
+    "id": 73,
+    "name": "SATDOBATO BRANCH",
+    "branchCode": "570"
+  },
+  {
+    "id": 74,
+    "name": "JORPATI BRANCH",
+    "branchCode": "580"
+  },
+  {
+    "id": 75,
+    "name": "MAHENDRANAGAR BRANCH",
+    "branchCode": "590"
+  },
+  {
+    "id": 76,
+    "name": "JHALARI BRANCH",
+    "branchCode": "591"
+  },
+  {
+    "id": 77,
+    "name": "SUKKHAD BRANCH",
+    "branchCode": "600"
+  },
+  {
+    "id": 78,
+    "name": "KHANDBARI BRANCH",
+    "branchCode": "610"
+  },
+  {
+    "id": 79,
+    "name": "PIPRA BRANCH",
+    "branchCode": "620"
+  },
+  {
+    "id": 80,
+    "name": "BIRUWA BRANCH",
+    "branchCode": "630"
+  },
+  {
+    "id": 81,
+    "name": "DUPCHESHWOR BRANCH",
+    "branchCode": "640"
+  },
+  {
+    "id": 82,
+    "name": "BANSGADHI BRANCH",
+    "branchCode": "650"
+  },
+  {
+    "id": 83,
+    "name": "SHIKHAR BRANCH",
+    "branchCode": "660"
+  },
+  {
+    "id": 84,
+    "name": "BANEPA BRANCH",
+    "branchCode": "670"
+  },
+  {
+    "id": 85,
+    "name": "BAUNIYA BRANCH",
+    "branchCode": "680"
+  },
+  {
+    "id": 86,
+    "name": "BATTAR BRANCH",
+    "branchCode": "690"
+  },
+  {
+    "id": 87,
+    "name": "KAWASOTI BRANCH",
+    "branchCode": "700"
+  },
+  {
+    "id": 88,
+    "name": "OKHALDHUNGA BRANCH",
+    "branchCode": "710"
+  },
+  {
+    "id": 89,
+    "name": "KALAIYA BRANCH",
+    "branchCode": "720"
+  },
+  {
+    "id": 90,
+    "name": "AMARSINGH CHOWK BRANCH",
+    "branchCode": "730"
+  },
+  {
+    "id": 91,
+    "name": "MIRCHAIYA BRANCH",
+    "branchCode": "740"
+  },
+  {
+    "id": 92,
+    "name": "SITAPAILA BRANCH",
+    "branchCode": "750"
+  },
+  {
+    "id": 93,
+    "name": "TANDI BRANCH",
+    "branchCode": "760"
+  },
+  {
+    "id": 94,
+    "name": "DIPAYAL BRANCH",
+    "branchCode": "770"
+  },
+  {
+    "id": 95,
+    "name": "SURMA BRANCH",
+    "branchCode": "780"
+  },
+  {
+    "id": 96,
+    "name": "TALKOT BRANCH",
+    "branchCode": "790"
+  },
+  {
+    "id": 97,
+    "name": "DHARAN BRANCH",
+    "branchCode": "800"
+  },
+  {
+    "id": 98,
+    "name": "DHARAN EXTENSION COUNTER BRANCH",
+    "branchCode": "801"
+  },
+  {
+    "id": 99,
+    "name": "NAXAL BRANCH",
+    "branchCode": "810"
+  },
+  {
+    "id": 100,
+    "name": "JADIBUTI BRANCH",
+    "branchCode": "820"
+  },
+  {
+    "id": 101,
+    "name": "MAHAKULUNG BRANCH",
+    "branchCode": "830"
+  },
+  {
+    "id": 102,
+    "name": "SILICHONG BRANCH",
+    "branchCode": "840"
+  },
+  {
+    "id": 103,
+    "name": "SANOGAUN BRANCH",
+    "branchCode": "850"
+  },
+  {
+    "id": 104,
+    "name": "KANCHANBARI BRANCH",
+    "branchCode": "860"
+  },
+  {
+    "id": 105,
+    "name": "INARUWA BRANCH",
+    "branchCode": "870"
+  },
+  {
+    "id": 106,
+    "name": "MAHENDRANAGAR DHANUSHA BRANCH",
+    "branchCode": "880"
+  },
+  {
+    "id": 107,
+    "name": "GHORAHI BRANCH",
+    "branchCode": "890"
+  },
+  {
+    "id": 108,
+    "name": "HAKIM CHOWK BRANCH",
+    "branchCode": "900"
+  },
+  {
+    "id": 109,
+    "name": "DHARKE BRANCH",
+    "branchCode": "910"
+  },
+  {
+    "id": 110,
+    "name": "GAIGHAT BRANCH",
+    "branchCode": "920"
+  },
+  {
+    "id": 111,
+    "name": "DAMAULI BRANCH",
+    "branchCode": "930"
+  },
+  {
+    "id": 112,
+    "name": "BHAISEPATI BRANCH",
+    "branchCode": "940"
+  },
+  {
+    "id": 113,
+    "name": "BUDHANILKANTHA BRANCH",
+    "branchCode": "950"
+  },
+  {
+    "id": 114,
+    "name": "YOGIKUTI BRANCH",
+    "branchCode": "960"
+  },
+  {
+    "id": 115,
+    "name": "KHAIRENI BRANCH",
+    "branchCode": "970"
+  },
+  {
+    "id": 116,
+    "name": "MANIGRAM BRANCH",
+    "branchCode": "980"
+  },
+  {
+    "id": 117,
+    "name": "MURGIYA BRANCH",
+    "branchCode": "990"
+  },
+  {
+    "id": 118,
+    "name": "JEETPUR BRANCH",
+    "branchCode": "1010"
+  },
+  {
+    "id": 119,
+    "name": "JAMAL BRANCH",
+    "branchCode": "1020"
+  },
+  {
+    "id": 120,
+    "name": "JARANKHU BRANCH",
+    "branchCode": "1030"
+  },
+  {
+    "id": 121,
+    "name": "MAHARAJGUNJ BRANCH",
+    "branchCode": "1040"
+  },
+  {
+    "id": 122,
+    "name": "KADAGHARI BRANCH",
+    "branchCode": "1050"
+  },
+  {
+    "id": 123,
+    "name": "THIMI BRANCH",
+    "branchCode": "1060"
+  },
+  {
+    "id": 124,
+    "name": "PARASI BRANCH",
+    "branchCode": "1070"
+  },
+  {
+    "id": 125,
+    "name": "RAJAPUR BRANCH",
+    "branchCode": "1080"
+  },
+  {
+    "id": 126,
+    "name": "TAUKHEL BRANCH",
+    "branchCode": "1090"
+  },
+  {
+    "id": 127,
+    "name": "SUNDARBASTI BRANCH",
+    "branchCode": "1130"
+  },
+  {
+    "id": 128,
+    "name": "PATHARI BRANCH",
+    "branchCode": "0213"
+  },
+  {
+    "id": 129,
+    "name": "DHULABARI BRANCH",
+    "branchCode": "1140"
+  },
+  {
+    "id": 130,
+    "name": "BIRAUTA BRANCH",
+    "branchCode": "1150"
+  },
+  {
+    "id": 131,
+    "name": "LALBANDI BRANCH",
+    "branchCode": "1160"
+  },
+  {
+    "id": 136,
+    "name": "KAMALBINAYAK BRANCH",
+    "branchCode": "1170"
+  },
+  {
+    "id": 137,
+    "name": "MANGALBAZAR EXT. COUNTER BRANCH",
+    "branchCode": "0121"
+  },
+  {
+    "id": 138,
+    "name": "BARDAGHAT BRANCH",
+    "branchCode": "1180"
+  },
+  {
+    "id": 139,
+    "name": "DALDALE BRANCH",
+    "branchCode": "1190"
+  },
+  {
+    "id": 140,
+    "name": "MURALICHOWK BRANCH",
+    "branchCode": "1220"
+  },
+  {
+    "id": 141,
+    "name": "TOKHA BRANCH",
+    "branchCode": "1230"
+  },
+  {
+    "id": 142,
+    "name": "PAKADI EXTENSION COUNTER BRANCH",
+    "branchCode": "0381"
+  }
+]

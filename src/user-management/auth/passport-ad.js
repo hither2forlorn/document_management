@@ -4,20 +4,22 @@ const { User } = require("../../config/database");
 const Op = require("sequelize").Op;
 const { signInLdap } = require("../util/user_ldap_auth");
 const logger = require("../../config/logger");
-const { authenticate } = require("./ad-auth");
+
 passport.serializeUser(function (user, done) {
   done(null, user.id);
 });
+
 passport.deserializeUser(function (id, done) {
   User.findAll({
     where: { id: id },
   }).then((users) => done(users[0]));
 });
+
 /**
-* <p>This method is used by passport.js for the authentication of the users</p>
-* <p>This method is used for authentication of AD users</p>
-* @method UserManagement#adUserLogin
-*/
+ * <p>This method is used by passport.js for the authentication of the users</p>
+ * <p>This method is used for authentication of AD users</p>
+ * @method UserManagement#adUserLogin
+ */
 passport.use(
   "ad-login",
   new LocalStrategy(
@@ -27,12 +29,17 @@ passport.use(
       passReqToCallback: true,
     },
     function (req, username, password, done) {
+      process.env.NODE_ENV === "development" ? console.log(username, password) : null;
       if (username && password) {
         User.findOne({
           where: {
             [Op.or]: [
-              { email: username },
-              { username: username },
+              {
+                email: username,
+              },
+              {
+                username: username,
+              },
             ],
             type: "admin",
             isDeleted: false,
@@ -43,42 +50,41 @@ passport.use(
             if (user) {
               let attempts = user.loginAttemptsCount;
               if (attempts > 0) {
-                // Check the environment and decide whether to update the attempts immediately
                 if (process.env.NODE_ENV === "development") {
-                   User.update({ loginAttemptsCount: user.loginAttempts }, { where: { id: user.id } });
+                  User.update({ loginAttemptsCount: user.loginAttempts }, { where: { id: user.id } });
                   return done(null, user);
-                  // For dev environment, don't decrease attempts before LDAP check
                 } else {
-                  authenticate(user.distinguishedName, password, (err, result) => {
+                  signInLdap(user.distinguishedName, password, (result) => {
                     if (result) {
-                      // If authentication is successful, reset attempts and continue
-                      user.update({ loginAttemptsCount: user.loginAttempts }, { where: { id: user.id } });
+                      User.update({ loginAttemptsCount: user.loginAttempts }, { where: { id: user.id } });
                       return done(null, user);
                     } else {
-                      // Authentication failed
                       attempts--;
-                      if (attempts === 0) {
-                        user.update({ loginAttemptsCount: attempts }, { where: { id: user.id } });
-                        return done(null, false, { message: "Login attempts exceeded!" });
-                      } else {
-                        // Update the attempts and continue with the error message
-                        user.update({ loginAttemptsCount: attempts }, { where: { id: user.id } });
-                        return done(null, false, { message: "Invalid Credentials!" });
-                      }
+                      res.status(401).send(false);
+                      if (attempts === 0) User.update({ isActive: false }, { where: { id: user.id } });
+                      User.update({ loginAttemptsCount: attempts }, { where: { id: user.id } });
+                      return done(null, false, {
+                        message: "Login attempts exceeded!",
+                      });
                     }
                   });
                 }
               } else {
-                // If attempts <= 0, user is locked out
-                return done(null, false, { message: "Login attempts exceeded!" });
+                return done(null, false, {
+                  message: "Login attempts exceeded!",
+                });
               }
             } else {
-              return done(null, false, { message: "User not found" });
+              return done(null, false, {
+                message: "User not found",
+              });
             }
           })
           .catch((err) => {
             logger.error(err);
-            return done(null, false, { message: "Error occurred!" });
+            return done(null, false, {
+              message: "Error occurred!",
+            });
           });
       }
     }

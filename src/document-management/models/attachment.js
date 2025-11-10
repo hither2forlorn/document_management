@@ -81,11 +81,5 @@ module.exports = (sequelize, type) => {
     notes: {
       type: type.STRING,
     },
-    md5Hash: {
-      type: type.STRING,
-    },
-    redactedFilePath: {
-      type: type.STRING,
-    },
   });
 };

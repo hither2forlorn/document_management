@@ -46,13 +46,17 @@ const paginateQuery = ({ page, limit, searchingParameters }, getTotalDocument, u
      */
 
     const { filterText, textIndexFilter } = seperateFilterOptions(searchData, "d");
+    let showSaved = true;
     // Query for total document and search filter
-    const { query, total } = querySearchAndFilter(user, offset, limit, filterText, textIndexFilter);
+    const { query, total } = querySearchAndFilter(user, offset, limit, filterText, textIndexFilter, (onLoad = false));
+    // consoleLog("search and filter: ", query);
     // Only return total query if getTotalDocuent is true
     return getTotalDocument ? total : query;
   }
+
   // Query to list all document.
-  const { query, total } = queryLoadDocuments(user, offset, limit, isSearchingParameters);
+  const { query, total } = queryLoadDocuments(user, offset, limit, isSearchingParameters, (onLoad = true));
+  // consoleLog("Load documents: ", query);
   return getTotalDocument ? total : query;
 };
 
@@ -74,19 +78,19 @@ function getFavouriteDocument({ page, limit }, getTotalDocument, user) {
   return getTotalDocument ? total : query;
 }
 // query to get pending docuemnt
-function getPendingDocument({ page, limit }, getTotalDocument, user, hasRoleTypeId) {
+function getPendingDocument({ page, limit }, getTotalDocument, user) {
   limit = limit ? limit : 5;
   offset = page ? (page - 1) * limit : 0;
 
-  const { query, total } = queryPendingDocuments(user, hasRoleTypeId, offset, limit);
+  const { query, total } = queryPendingDocuments(user, offset, limit);
   return getTotalDocument ? total : query;
 }
 // query to get Rejected docuemnt
-function getRejectedDocument({ page, limit }, getTotalDocument, user, hasRoleTypeId) {
+function getRejectedDocument({ page, limit }, getTotalDocument, user) {
   limit = limit ? limit : 5;
   offset = page ? (page - 1) * limit : 0;
 
-  const { query, total } = queryRejectedDocuments(user, hasRoleTypeId, offset, limit);
+  const { query, total } = queryRejectedDocuments(user, offset, limit);
   return getTotalDocument ? total : query;
 }
 // query to get Saved docuemnt

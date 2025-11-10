@@ -3,21 +3,19 @@ const isSuperAdmin = require("./isSuperAdmin");
 // query for document view in attachmenttable component
 function documentAttachment(docId, user) {
   const query = `
- select a.*,label,u.name  as 'username',value,div.id indexValueId,di.dataType,di.isShownInAttachment,dt.name as documentType ,dt.parentId
+  select a.*,label,value,div.id indexValueId,di.dataType,di.isShownInAttachment,dt.name as documentType ,dt.parentId
   FROM attachments a
   left join document_index_values div ON div.attachmentId =a.id
   left join document_indices di ON div.documentIndexId =di.id
   left join document_types dt on dt.id=a.documentTypeId
-  left join constants const on const.id =div.value
-  left join users u on u.id  = a.createdBy
-
+  left join constants const on const.id =div.value 
  `;
 
   const attachments = `where a.itemId=${docId}
    ${
      isSuperAdmin(user)
        ? " "
-       : `and a.isDeleted != 1
+       : `and a.isDeleted != 1 
    `
    }
  `;

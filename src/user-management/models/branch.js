@@ -40,7 +40,7 @@ module.exports = (sequelize, type) => {
     province: {
       type: type.STRING,
     },
-    mailId: {
+    website: {
       type: type.STRING,
     },
     hierarchy: {

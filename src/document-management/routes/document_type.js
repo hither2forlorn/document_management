@@ -2,41 +2,34 @@ const router = require("express").Router();
 const auth = require("../../config/auth");
 const validator = require("../../util/validation");
 const { deleteItem, DOCUMENT_TYPE } = require("../../config/delete");
-const { DocumentType, SecurityHierarchy } = require("../../config/database");
+const { DocumentType } = require("../../config/database");
 const { documentTypeValidation, documentTypeValidationEdit } = require("../../validations/document_type");
 const { availableHierarchy } = require("../../util/hierarchyManage");
 const { createLog, constantLogType, findPreviousData } = require("../../util/logsManagement");
 const { execSelectQuery } = require("../../util/queryFunction");
 const isSuperAdmin = require("../sqlQuery/isSuperAdmin");
-const { Op } = require("sequelize");
+
 router.post("/document-type", validator(documentTypeValidation), auth.required, async (req, res, next) => {
   // To maintain log
   let log_query;
   const typename = req.body.name;
 
   // admin then set to CONSTANT else normal branch user create hierarchy
-  req.body.hierarchy = isSuperAdmin(req.payload) ? req.body.hierarchy || "CONSTANT" : req.payload.hierarchy || "CONSTANT";
+  req.body.hierarchy = isSuperAdmin(req.payload) ? "CONSTANT" : req.payload.hierarchy || "CONSTANT";
 
   req.body.parentId = req.body?.parentId == "" ? null : req.body?.parentId;
+  const query = `
+        select * from document_types dt where dt.isDeleted=0
+    and dt.name='${req.body?.name}'
+    ${req.body?.parentId || req.body?.parentId == "" ? `and dt.parentId='${req.body?.parentId}'` : ""}
+    ${
+      req.body?.hierarchy
+        ? `and dt.hierarchy='${req.payload.id == 1 ? req.body.hierarchy || "CONSTANT" : req.payload?.hierarchy}'`
+        : ""
+    }
+     `;
 
-  const whereConditions = {
-    isDeleted: 0,
-    name: req.body?.name,
-  };
-
-  // Add parentId condition if provided and not empty string
-  if (req.body?.parentId || req.body?.parentId === 0) {
-    whereConditions.parentId = req.body.parentId;
-  }
-
-  // Add hierarchy condition if provided
-  if (req.body?.hierarchy) {
-    whereConditions.hierarchy = req.payload.id == 1 ? req.body.hierarchy || "CONSTANT" : req.payload?.hierarchy;
-  }
-
-  const checkDocTypeExists = await DocumentType.findAll({
-    where: whereConditions,
-  });
+  const checkDocTypeExists = await execSelectQuery(query);
 
   if (checkDocTypeExists.length > 0) {
     return res.json({
@@ -82,55 +75,6 @@ router.get("/document-type", auth.required, async (req, res, next) => {
     });
 });
 
-//document-type from department
-router.get("/document-type-by-department", auth.required, async (req, res, next) => {
-  const { departmentId } = req.query;
-
-  if (!departmentId) {
-    return res.json({ success: false, message: "Department ID is required" });
-  }
-
-  try {
-    const securityHierarchies = await SecurityHierarchy.findAll({
-      attributes: ["code"],
-      where: {
-        departmentId: departmentId,
-        isDeleted: false,
-      },
-      raw: true,
-    });
-
-    const codes = securityHierarchies.map((sh) => sh.code);
-
-    // Get both data and count
-    const [documentTypes, totalCount] = await Promise.all([
-      DocumentType.findAll({
-        attributes: ["id", "name"],
-        where: {
-          hierarchy: { [Op.in]: codes },
-          isDeleted: false,
-        },
-        raw: true,
-      }),
-      DocumentType.count({
-        where: {
-          hierarchy: { [Op.in]: codes },
-          isDeleted: false,
-        },
-      }),
-    ]);
-
-    res.json({
-      success: true,
-      data: documentTypes,
-      totalCount: totalCount,
-    });
-  } catch (err) {
-    console.log(err);
-    res.json({ success: false, message: "Error!" });
-  }
-});
-
 router.get("/document-type/:id", auth.required, (req, res, next) => {
   // To maintain log
   let log_query;
@@ -172,22 +116,22 @@ router.put("/document-type", validator(documentTypeValidationEdit), auth.require
     if (docTypeHasChildren.length > 0) return res.send({ success: false, message: "Contains children document Type." });
   }
 
-  // // check doc type exists
-  // const checkDocTypeExists = await DocumentType.findOne({
-  //   where: {
-  //     isDeleted: false,
-  //     name: req.body.name,
-  //     parentId: req.body.parentId,
-  //     hierarchy: req.body.hierarchy,
-  //   },
-  // });
+  // check doc type exists
+  const checkDocTypeExists = await DocumentType.findOne({
+    where: {
+      isDeleted: false,
+      name: req.body.name,
+      parentId: req.body.parentId,
+      hierarchy: req.body.hierarchy,
+    },
+  });
 
-  // if (checkDocTypeExists) {
-  //   return res.json({
-  //     success: false,
-  //     message: "Document type with this name exists!!",
-  //   });
-  // }
+  if (checkDocTypeExists) {
+    return res.json({
+      success: false,
+      message: "Document type with this name exists!!",
+    });
+  }
 
   DocumentType.update(req.body, {
     // To maintain log

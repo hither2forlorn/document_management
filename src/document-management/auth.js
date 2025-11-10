@@ -2,8 +2,6 @@
  * @module DocumentSecurityModule
  */
 const { User, Department, DocumentAccessUser } = require("../config/database");
-const getAssociatedBranches = require("../util/getAssociatedBranches");
-const { execSelectQuery } = require("../util/queryFunction");
 
 /**
  * Method to pass the document list and userId
@@ -15,13 +13,13 @@ const { execSelectQuery } = require("../util/queryFunction");
  * @returns The list of the documents which can be viewed by the particular user
  */
 async function canViewTheDocument(userId, documentList) {
-  const [{ roleId, departmentId, branchId, hierarchy }, departments, documentAccessUsers] = await Promise.all([
+  const [{ roleId, departmentId }, departments, documentAccessUsers] = await Promise.all([
     getUser(userId),
     getDepartments(),
     getDocumentAccessUser(userId),
   ]);
-  const allowedBranches = await getAssociatedBranches(departmentId);
   let finalDoc;
+
   checkRole(roleId, (isAdmin) => {
     if (isAdmin) {
       finalDoc = documentList;
@@ -33,17 +31,12 @@ async function canViewTheDocument(userId, documentList) {
             finalDoc.push(doc);
             break;
           case 2:
-            if (doc.ownerId === userId || branchId === doc.branchId || hierarchy.includes("Super")) {
+            if (doc.ownerId === userId) {
               finalDoc.push(doc);
             } else {
-              const branchAllowed = doc.branchId && allowedBranches.find((b) => b.id == doc.branchId);
-              if (branchAllowed) {
-                finalDoc.push(doc);
-              } else {
-                checkDepartment(departmentId, doc.departmentId, departments, (isAccessible) => {
-                  if (isAccessible) finalDoc.push(doc);
-                });
-              }
+              checkDepartment(departmentId, doc.departmentId, departments, (isAccessible) => {
+                if (isAccessible) finalDoc.push(doc);
+              });
             }
             break;
           case 3:
@@ -69,7 +62,7 @@ function getUser(id) {
   return User.findOne({
     where: id,
     raw: true,
-    attributes: ["departmentId", "branchId", "roleId", "hierarchy"],
+    attributes: ["departmentId", "roleId"],
   });
 }
 

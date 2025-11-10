@@ -33,7 +33,7 @@ passport.use(
         where: { email: email, type: "admin", isDeleted: false },
       }).then((users) => {
         if (users === undefined || users.length == 0) {
-          return done(null, false, { message: "" });
+          return done(null, false, { message: "User not found" });
         } else {
           const user = users[0];
           if (user.statusId == 2) {
@@ -70,7 +70,7 @@ passport.use(
                 User.update({ loginAttemptsCount: loginAttemptsCount }, { where: { id: user.id } });
                 return done(null, false, {
                   success: response,
-                  // message: "Incorrect password.",
+                  message: "Incorrect password.",
                 });
               }
             });

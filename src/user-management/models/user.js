@@ -99,6 +99,12 @@ module.exports = (sequelize, type) => {
       type: type.BOOLEAN,
       defaultValue: true,
     },
+    lastPasswordChange: {
+      type: type.DATE,
+      allowNull: true,
+      defaultValue: type.NOW,
+      field: 'LastPasswordChange', // keeps DB column name if you want PascalCase in DB
+    },
     notes: {
       type: type.TEXT,
     },
@@ -117,10 +123,7 @@ module.exports = (sequelize, type) => {
     userGroupId: {
       type: type.INTEGER,
     },
-    customWatermarkId: {
-      type: type.INTEGER,
-    },
-    hasCustomWatermark: {
+    isLoggedIn: {
       type: type.BOOLEAN,
       defaultValue: false,
     },

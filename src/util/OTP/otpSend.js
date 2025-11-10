@@ -21,7 +21,6 @@ function handleOTPSend(req) {
  */
 const saveOTP = async (email, code) => {
   const key = `otp-${email}`;
-  console.log(code);
   await redis.set(key, code);
   await redis.expire(key, 300);
 };

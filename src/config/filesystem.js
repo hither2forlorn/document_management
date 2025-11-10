@@ -12,20 +12,12 @@ const path = require("path");
  * Creating a storage to store file uploaded by the user to later upload to the FTP server
  * This function is of **multer**
  */
-
-// Function to create a directory if it doesn't exist
-const createDirectoryIfNotExist = (directory) => {
-  if (!fs.existsSync(directory)) {
-    fs.mkdirSync(directory, { recursive: true });
-  }
-};
-
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "temp");
   },
   filename: function (req, file, cb) {
-    cb(null, file.originalname);
+    cb(null, Date.now() + "-" + file.originalname);
   },
 });
 
@@ -35,16 +27,6 @@ const watermarkStorage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + "-" + file.originalname);
-  },
-});
-const redactionStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const destinationPath = path.join("temp", "redactedFiles");
-    createDirectoryIfNotExist(destinationPath);
-    cb(null, destinationPath);
-  },
-  filename: function (req, file, cb) {
-    cb(null, file.originalname);
   },
 });
 
@@ -119,9 +101,24 @@ function emptyTemp(tempPath) {
   fs.readdir(tempPath, (err, files) => {
     if (err) throw err;
     for (const file of files) {
-      fs.unlink(path.join(tempPath, file), (err) => {
-        if (err) {
-          rimraf(path.join(tempPath, file), () => {});
+      const filePath = path.join(tempPath, file);
+      // Check if the file is a directory
+      fs.stat(filePath, (err, stats) => {
+        if (err) throw err;
+        if (stats.isDirectory() && file !== "zip") {
+          // Recursively delete directories other than the 'zip' folder
+          rimraf(filePath, (err) => {
+            if (err) {
+              console.error(`Error deleting directory ${filePath}:`, err);
+            }
+          });
+        } else if (file !== "zip") {
+          // Delete files other than the 'zip' folder
+          fs.unlink(filePath, (err) => {
+            if (err) {
+              console.error(`Error deleting file ${filePath}:`, err);
+            }
+          });
         }
       });
     }
@@ -136,5 +133,4 @@ module.exports = {
   emptyTemp,
   checkFTPconnection,
   watermarkStorage,
-  redactionStorage,
 };

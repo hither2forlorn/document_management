@@ -13,6 +13,7 @@ const {
 const { DOCUMENT, ATTACHMENT } = require("../../config/delete");
 const { getDocument } = require("./getModelDetail");
 const { execSelectQuery } = require("../../util/queryFunction");
+const { Op } = require("sequelize");
 
 /**
  * Find document or attachment from doc id
@@ -52,7 +53,6 @@ module.exports.sendEmailMakerCheckerInit = async (makerId, checkerId, docId) => 
   const [maker, checker, document] = await Promise.all([getMaker, getChecker, getDoc]);
   sendMessage(makerCheckerInitiated(maker, checker, document));
 };
-
 module.exports.sendEmailDocumentDelete = async (makerId, checkerId, docId) => {
   const getMaker = User.findOne({
     where: { id: makerId },
@@ -69,7 +69,7 @@ module.exports.sendEmailDocumentDelete = async (makerId, checkerId, docId) => {
     raw: true,
   });
   const [maker, checker, document] = await Promise.all([getMaker, getChecker, getDoc]);
-  sendMessage(documentDeleteEmail(maker, checker, document));
+  await sendMessage(documentDeleteEmail(maker, checker, document));
 };
 
 /**
@@ -131,22 +131,20 @@ async function sendEmailMakerCheckerReject(checkerId, docId, rejectionMessage) {
  * @method
  * @param {DocumentModel} documentItem
  */
-module.exports.addChecker = (documentItem, attachment, approver) => {
+module.exports.addChecker = (documentItem, attachment) => {
   const doc = attachment ? documentItem : documentItem.dataValues;
 
   const checker = doc.checker;
-
   checker.forEach((item, index) => {
     ApprovalMaster.create({
       isActive: true,
-      currentLevel: 1, // Set level 1 for Checker
+      currentLevel: 1,
       documentId: doc.id,
       initiatorId: documentItem.ownerId,
       assignedTo: item.userId,
       type: attachment ? ATTACHMENT : DOCUMENT,
     })
       .then((approvalMaster) => {
-        // Add initial entry in ApprovalQueue for the document owner
         ApprovalQueue.create({
           approvalMasterId: approvalMaster.id,
           isActive: true,
@@ -154,37 +152,18 @@ module.exports.addChecker = (documentItem, attachment, approver) => {
           userId: documentItem.ownerId,
           isApprover: false,
         }).catch((err) => console.log(err));
-
-        // Add Checker entry in ApprovalQueue
+        // sendEmailMakerCheckerInit(doc.ownerId, item.userId, doc.id);
         ApprovalQueue.create({
           approvalMasterId: approvalMaster.id,
           isActive: true,
-          level: index + 1, // Level 1 for Checker
+          level: index + 1,
           userId: item.userId,
           isApprover: item.isApprover,
         }).catch((err) => console.log(err));
-
-        // Add Approver entry in ApprovalQueue if approver is provided
-        if (approver && approver.userId) {
-          ApprovalQueue.create({
-            approvalMasterId: approvalMaster.id,
-            isActive: true,
-            level: index + 2, // Level 2 for Approver
-            userId: approver.userId,
-            isApprover: true,
-          }).catch((err) => console.log(err));
-
-          // Update ApprovalMaster to reflect the approver
-          ApprovalMaster.update(
-            { assignedTo: approver.userId, currentLevel: 2 },
-            { where: { id: approvalMaster.id } }
-          ).catch((err) => console.log(err));
-        }
       })
       .catch((err) => console.log(err));
   });
 };
-
 
 /**
  * Approves the document by the checker
@@ -195,15 +174,76 @@ module.exports.addChecker = (documentItem, attachment, approver) => {
  * @param {Number}      docId
  * @param {Function}    callback Callback function returning a response
  */
+
+// module.exports.approveDocument = async (userId, docId, callback) => {
+//   const type = await get_document_or_attachment(docId);
+
+//   ApprovalMaster.findOne({
+//     where: { documentId: docId, type },
+//   })
+//     .then((master) => {
+//       ApprovalQueue.findAll({
+//         where: { approvalMasterId: master.id },
+//         raw: true,
+//       })
+//         .then(async (queue) => {
+//           let approved = false;
+
+//           // Approval  Queue
+//           queue.forEach((item) => {
+//             if (item.userId == userId && item.isApprover) {
+//               Document.update({ isApproved: true, returnedByChecker: false }, { where: { id: docId } }).then(async (_) => {
+//                 approved = true;
+//                 // sendEmailMakerCheckerApprove(userId, docId);
+//               });
+//             }
+//           });
+
+//           // approval master update isActive
+//           await ApprovalMaster.update({ isActive: false }, { where: { id: master.id } });
+
+//           // find attachments and  update pending Approval to false
+//           const attachments = await execSelectQuery(`
+//             SELECT a.* from documents d
+//             join attachments a on d.id=a.itemId
+//             where a.itemId =${docId} and a.pendingApproval=1`);
+
+//           await Promise.all(
+//             attachments.map(async (row) => {
+//               await Attachment.update({ pendingApproval: false }, { where: { id: row.id, isDeleted: false } });
+//             })
+//           );
+
+//           callback({ success: true, type, message: "Document Approved!" });
+//         })
+//         .catch((err) => {
+//           callback({ success: false, message: "Error!" });
+//           console.log(err);
+//         });
+//     })
+//     .catch((err) => {
+//       callback({ success: false, message: "Error!" });
+//       console.log(err);
+//     });
+// };
+
+
+
 module.exports.approveDocument = async (userId, docId, callback) => {
   const type = await get_document_or_attachment(docId);
 
-  ApprovalMaster.findOne({
-    where: { documentId: docId, type, isActive: true },
+  ApprovalMaster.findAll({
+    where: { documentId: docId, type },
   })
-    .then((master) => {
+    .then((masters) => {
+      if (!masters || masters.length === 0) {
+        return callback({ success: false, message: "No ApprovalMaster found" });
+      }
+
+      const masterIds = masters.map((m) => m.id);
+
       ApprovalQueue.findAll({
-        where: { approvalMasterId: master.id },
+        where: { approvalMasterId: { [Op.in]: masterIds } },
         raw: true,
       })
         .then(async (queue) => {
@@ -214,15 +254,15 @@ module.exports.approveDocument = async (userId, docId, callback) => {
             if (item.userId == userId && item.isApprover) {
               Document.update({ isApproved: true, returnedByChecker: false }, { where: { id: docId } }).then(async (_) => {
                 approved = true;
-                sendEmailMakerCheckerApprove(userId, docId);
+                // sendEmailMakerCheckerApprove(userId, docId);
               });
             }
           });
 
-          // approval master update isActive
-          await ApprovalMaster.update({ isActive: false }, { where: { id: master.id } });
+          // approval master update isActive for all masters
+          await ApprovalMaster.update({ isActive: false }, { where: { id: { [Op.in]: masterIds } } });
 
-          // find attachments and  update pending Approval to false
+          // find attachments and update pendingApproval to false
           const attachments = await execSelectQuery(`
             SELECT a.* from documents d
             join attachments a on d.id=a.itemId
@@ -247,7 +287,7 @@ module.exports.approveDocument = async (userId, docId, callback) => {
     });
 };
 
-//for resubmitting document
+// for resubmitting document
 module.exports.resubmitDocument = async (userId, docId, callback) => {
   const type = await get_document_or_attachment(docId);
 
@@ -269,7 +309,6 @@ module.exports.resubmitDocument = async (userId, docId, callback) => {
                     returnedByChecker: false,
                     sendToChecker: true,
                     isArchived: false,
-                    returnedByApprover: false
                   },
                   { where: { id: docId } }
                 )
@@ -306,8 +345,6 @@ module.exports.resubmitDocument = async (userId, docId, callback) => {
 };
 
 // for archiving documents
-
-
 module.exports.archiveDocument = async (userId, docId, rejectionMessage, callback) => {
   const type = await get_document_or_attachment(docId);
   ApprovalMaster.findOne({
@@ -320,62 +357,29 @@ module.exports.archiveDocument = async (userId, docId, rejectionMessage, callbac
       })
         .then((queue) => {
           queue.forEach((item) => {
-            if (item.userId === userId) {
-              const currentDate = new Date().toISOString();
-              // If user is an approver and level is 2
-              if (item.isApprover && item.level == 2) {
-                Document.update(
-                  {
-                    returnedByApprover: true,
-                    sendToChecker: true,
-                    rejectionDateOfApprover:currentDate , // Add rejection date
-                    rejectionMessageByApprover: rejectionMessage,  // Store message for approver
-                    sendToApprover: false,
-                    returnedByChecker: false,
-                    rejectionMessageByChecker: null,                   
-                  },
-                  { where: { id: docId } }
-                )
-                  .then((_) => {
-                    getDocument(docId).then((document) => {
-                      if (document.dataValues.isApproved == false) {
-                        Attachment.update({ pendingApproval: true }, { where: { itemId: docId } });
-                      }
-                    });
-                    sendEmailMakerCheckerReject(userId, docId, rejectionMessage);
-                    callback({ success: true, type, message: "Document Rejected by Approver!" });
-                  })
-                  .catch((err) => {
-                    callback({ success: false, message: "Error!" });
-                    console.log(err);
+            if (item.userId === userId && item.isApprover) {
+              Document.update(
+                {
+                  returnedByChecker: true,
+                  sendToChecker: false,
+                  returnedMessage: rejectionMessage,
+                },
+                { where: { id: docId } }
+              )
+                .then((_) => {
+                  getDocument(docId).then((document) => {
+                    if (document.dataValues.isApproved == false) {
+                      Attachment.update({ pendingApproval: true }, { where: { itemId: docId } });
+                    }
                   });
-              }
-              // If user is a checker
-              else if (!item.isChecker) {
-                Document.update(
-                  {
-                    returnedByChecker: true,
-                    sendToChecker: false,
-                    rejectionDateOfChecker:currentDate,
-                    rejectionMessageByChecker: rejectionMessage,  // Store message for checker
-                     // Add rejection date
-                  },
-                  { where: { id: docId } }
-                )
-                  .then((_) => {
-                    getDocument(docId).then((document) => {
-                      if (document.dataValues.isApproved == false) {
-                        Attachment.update({ pendingApproval: true }, { where: { itemId: docId } });
-                      }
-                    });
-                    sendEmailMakerCheckerReject(userId, docId, rejectionMessage);
-                    callback({ success: true, type, message: "Document Rejected by Checker!" });
-                  })
-                  .catch((err) => {
-                    callback({ success: false, message: "Error!" });
-                    console.log(err);
-                  });
-              }
+                  isArchived = true;
+                  // sendEmailMakerCheckerReject(userId, docId, rejectionMessage);
+                  callback({ success: true, type, message: "Document Rejected!" });
+                })
+                .catch((err) => {
+                  callback({ success: false, message: "Error!" });
+                  console.log(err);
+                });
             }
           });
         })
@@ -389,7 +393,6 @@ module.exports.archiveDocument = async (userId, docId, rejectionMessage, callbac
       console.log(err);
     });
 };
-
 
 /**
  * Returns an array of documents for which a user is the checker

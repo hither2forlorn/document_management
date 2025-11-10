@@ -6,29 +6,14 @@ const { DocumentCondition } = require("../../config/database");
 const { documentConditionValidation, documentConditionValidationEdit } = require("../../validations/document_condition");
 
 router.post("/document-condition", validator(documentConditionValidation), auth.required, (req, res, next) => {
-  // check if language already exist
-  DocumentCondition.findOne({ where: { name: req.body.name } }).then((documentCondition) => {
-    if (documentCondition) {
-      return res.status(400).json({ message: "Document Condition already exists" });
-    } else {
-      DocumentCondition.create(req.body)
-        .then((_) => {
-          res.json({ success: true, message: "Successful!" });
-        })
-        .catch((err) => {
-          console.log(err);
-          res.json({ success: false, message: "Error!" });
-        });
-    }
-  });
-  // DocumentCondition.create(req.body)
-  //   .then((_) => {
-  //     res.json({ success: true, message: "Successfully created!" });
-  //   })
-  //   .catch((err) => {
-  //     console.log(err);
-  //     res.json({ success: false, message: "Error!" });
-  //   });
+  DocumentCondition.create(req.body)
+    .then((_) => {
+      res.json({ success: true, message: "Successfully created!" });
+    })
+    .catch((err) => {
+      console.log(err);
+      res.json({ success: false, message: "Error!" });
+    });
 });
 
 router.get("/document-condition", (req, res, next) => {
@@ -79,8 +64,7 @@ router.delete("/document-condition/:id", auth.required, (req, res, next) => {
     req.payload,
     (response) => {
       res.send(response);
-    },
-    req
+    }
   );
 });
 

@@ -10,6 +10,7 @@ const { respond } = require("./response");
  */
 function ValidationErrorHandler(err, res) {
   const { message, data } = err;
+  logger.error(err);
   respond(res, httpStatus.PRECONDITION_FAILED, message, data);
 }
 
@@ -30,8 +31,6 @@ function InvalidRefreshTokenHandler(err, res) {
 const ErrorHandler = (err, req, res, next) => {
   const { name } = err;
   console.log(err);
-  logger.error(err);
-
   switch (name) {
     case "Validation Error":
       ValidationErrorHandler(err, res);
@@ -41,7 +40,7 @@ const ErrorHandler = (err, req, res, next) => {
       break;
     case "UnauthorizedError":
       logger.error(err);
-      return respond(res, err.status, "Unauthorized");
+      return respond(res, err.status, "Unauthorized Access: Your session has expired. Please login again.");
       break;
     default:
       return respond(res, httpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error.");

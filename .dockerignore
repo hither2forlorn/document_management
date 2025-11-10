@@ -1,0 +1,9 @@
+node_modules
+logs
+ssl
+.vscode
+.git
+.env
+.env.example
+.dockerignore
+DockerFile

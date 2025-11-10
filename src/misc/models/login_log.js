@@ -31,5 +31,8 @@ module.exports = (sequelize, type) => {
     logoutIp: {
       type: type.STRING,
     },
+    token: {
+      type: type.STRING,
+    },
   });
 };

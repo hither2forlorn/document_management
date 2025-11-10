@@ -5,7 +5,6 @@ const fs = require("fs");
 const _ = require("lodash");
 const fileserver = require("../../config/fileserver");
 const logger = require("../../config/logger");
-const { FTP } = require("../../config/credentials");
 
 function getFileType(fileType) {
   if (fileType.includes("image")) {
@@ -32,14 +31,6 @@ async function uncompressAttachment(filePath) {
 async function downloadAttachmentFromFtp(localPath, ftpPath) {
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
     const isSuccess = await new Promise((resolve) => {
       ftp.download(ftpPath, localPath, (err) => {
@@ -63,14 +54,6 @@ async function uploadAttachments(attachments) {
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
 
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
     // structure for attachment uplaod
     const uploadArr = attachments.map((att) => {
@@ -110,14 +93,6 @@ async function downloadAttachmentsWithWatermark(allAttachments) {
   const watermarkPath = "temp/watermark/";
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
     const attachments = _.filter(allAttachments, (at) => {
       const isExist = fs.existsSync("temp/" + at.filePath);
@@ -160,14 +135,6 @@ async function downloadAttachments(allAttachments, isWatermark) {
     return await downloadAttachmentsWithWatermark(allAttachments);
   }
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
     const attachments = _.filter(allAttachments, (at) => !fs.existsSync("temp/" + at.filePath));
     const downloadArr = attachments.map((att) => {

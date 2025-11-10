@@ -35,23 +35,12 @@ router.post("/roles", auth.required, async (req, res, next) => {
   let log_query;
 
   const role = req.body;
-  // check if role with same name already exists and is not deleted
-
-  const roleExists = await Role.findOne({ where: { name: role.name, isDeleted: 0 } });
-  if (roleExists) {
-    return respond(res, "409", "Role with same name already exists");
-  }
-
-  // check if role_controls is empty
-  if (!role.role_controls) {
-    return respond(res, "400", "Role Type cannot be empty");
-  }
 
   if (role.hierarchy == "Super-000") {
     return respond(res, "412", `You in . ${role.hierarchy}. Top hierarchy cannot create roles.`);
   }
   // To maintain log
-  const previousValue = await findPreviousData(constantLogType.ROLES, role.createdBy, req.method);
+  const previousValue = await findPreviousData(constantLogType.ROLES, role.id, req.method);
 
   Role.create(
     role,
@@ -85,12 +74,6 @@ router.put("/roles/:id", auth.required, async (req, res, next) => {
   // To maintain log
   let log_query;
   // To maintain log
-  // prevent name duplication
-  const roleExists = await Role.findOne({ where: { name: role.name, isDeleted: 0 } });
-  if (roleExists && roleExists.id != role.id) {
-    return respond(res, "409", "Role with same name already exists");
-  }
-
   const previousValue = await findPreviousData(constantLogType.ROLES, role.id, req.method);
   Promise.all([
     Role.update(role, {

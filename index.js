@@ -3,6 +3,7 @@ require("express-async-errors");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const helmet = require("helmet");
+const session = require("express-session");
 const https = require("https");
 const compression = require("compression");
 const cookieParser = require("cookie-parser");
@@ -17,26 +18,87 @@ const logger = require("./src/config/logger");
 const ErrorHandler = require("./src/util/errors");
 const swaggerUi = require("swagger-ui-express");
 const swaggerJsDoc = require("swagger-jsdoc");
-const { corsOptions, swaggerOptions } = require("./src/config/options");
+
+const swaggerOptions = {
+  swaggerDefinition: {
+    info: {
+      version: "1.0.0",
+      title: "Customer API",
+      description: "Customer API Information",
+      contact: {
+        name: "Amazing Developer",
+      },
+      servers: ["http://localhost:8181"],
+    },
+  },
+  // ['.routes/*.js']
+  apis: ["./src/document-management/routes/*.js"],
+};
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
-app.use((req, res, next) => {
-  res.setHeader("Content-Security-Policy", "frame-ancestors 'self' https://dms.epf.org.np:443");
-  next();
-});
 
-app.use(helmet());
+const corsOptions = {
+  origin: [
+    "http://10.1.3.49:3001",
+    "https://localhost:3000",
+    "http://localhost:3000",
+    "http://dms.ebl.com.np",
+    "http://localhost:3001",
+    "http://localhost:8181",
+    "https://localhost:8181",
+    "https://dms.ebl.com.np",
+    "https://eblapims.ebl-zone.com",
+    "https://10.1.3.49:443",
+    "https://10.1.3.49:80",
+    "https://cap-unit.ebl.com.np",
+    "https://offline.ebl.com.np",
+  ],
+  credentials: true,
+};
 app.use(cors(corsOptions));
-app.use(compression());
+app.use(
+  compression({
+    level: 6,
+    threshold: 0,
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
+app.use(helmet());
+app.use(
+  helmet.frameguard({
+    action: "allow-from",
+    domain: "*",
+  })
+);
+
+app.use(
+  session({
+    secret: "=z|D3(k9S-|5}g,7 L.KfF  ?Q|Eo5lefWQ4JG&)Qp8(>0C<|#ahtcOz]-x=$:;p",
+    resave: true,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 2 * 60 * 1000,
+      secure: false, // if true only transmit cookie over https
+      httpOnly: true, // if true prevent client side JS from reading the cookie
+    },
+  })
+);
+
 app.use(morgan("tiny"));
 app.use(cookieParser());
-app.use(bodyParser.json({ limit: "50mb" }));
+app.use(bodyParser.json({ limit: "500mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: false }));
 app.use("/setup", require("./src/config/setup"));
 app.use(require("./src/config/middleware"));
 app.use(passport.initialize());
 app.use(passport.session());
+
 require("./src/config/scheduler");
 require("./src/user-management/auth/passport-ad");
 require("./src/user-management/auth/passport-admin");
@@ -51,6 +113,7 @@ app.use("/api", require("./src/misc"));
 /******************************************************************************************************************** */
 app.use("/api", require("./src/security-hierarchy"));
 app.use("/api", require("./src/logs"));
+
 /******************************************************************************************************************** */
 app.use("/api", require("./src/client"));
 /******************************************************************************************************************** */
@@ -61,7 +124,7 @@ app.use("/docs", express.static("doc"));
 
 app.use(ErrorHandler);
 // app.use((err, req, res, next) => {
-//   if (err.name === "UnauthorizedError") {
+//   if (err.name === "UnauthorizedError") {CXVN
 //     res.status(err.status).send();
 //   } else {
 //     res.status(err.status || 500).send();
@@ -69,17 +132,8 @@ app.use(ErrorHandler);
 // });
 /******************************************************************************************************************** */
 app.use("/", express.static("public"));
-app.use("/api/redaction/:id", express.static("redaction"));
-
 /******************************************************************************************************************** */
 
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.resolve(__dirname, "public", "index.html"));
-});
-
-/******************************************************************************************************************** */
 const sslEnabled = process.env.SSL_ENABLED === "true";
 if (sslEnabled) {
   app.get("/", (req, res) => res.redirect("https://" + req.headers.host + req.url));
@@ -88,8 +142,7 @@ if (sslEnabled) {
       {
         key: fs.readFileSync("./ssl/key.pem"),
         cert: fs.readFileSync("./ssl/cert.pem"),
-        rejectUnauthorized: true, // Default, but explicit is good
-        passphrase: process.env.SSL_PASS_PHRASE,
+        // passphrase: process.env.SSL_PASS_PHRASE,
       },
       app
     )
@@ -116,5 +169,12 @@ if (sslEnabled) {
   });
 }
 process.on("uncaughtException", (err) => {
+  console.log("UNCAUGHT EXCEPTION ERROR AT INDEX.JS", err);
+
+  logger.error(err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.log("UNHANDLED REJECTION EXCEPTION ERRROR AT INDEX.JS", err);
   logger.error(err);
 });

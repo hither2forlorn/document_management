@@ -57,32 +57,30 @@ router.get("/location-type/:id", auth.required, (req, res, next) => {
 });
 
 router.put("/location-type", validator(locationTypeValidationEdit), auth.required, async (req, res, next) => {
-  // check if the location type name is already exists
   const locationTypeName = req.body.name;
 
   const existingLocationType = await LocationType.findOne({
     where: { isDeleted: false, name: locationTypeName },
   });
-  console.log(existingLocationType, "this is existing location type");
 
   if (existingLocationType) {
     res.json({
       success: false,
-      message: "Location Type with this name exists!",
+      message: "Location Type with this name exists!!",
     });
-  }
-
-  await LocationType.update(req.body, {
-    where: { id: req.body.id },
-  })
-    .then((_) => {
-      res.json({ success: true, message: "Successfully updated!" });
+  } else {
+    await LocationType.update(req.body, {
+      where: { id: req.body.id },
     })
-    .catch((err) => {
-      console.log(err);
-      res.status(500);
-      res.json({ success: false, message: "Error! On the server" });
-    });
+      .then((_) => {
+        res.json({ success: true, message: "Successfully updated!" });
+      })
+      .catch((err) => {
+        console.log(err);
+        res.status(500);
+        res.json({ success: false, message: "Error! On the server" });
+      });
+  }
 });
 
 router.delete("/location-type/:id", auth.required, (req, res, next) => {
@@ -95,8 +93,7 @@ router.delete("/location-type/:id", auth.required, (req, res, next) => {
     req.payload,
     (response) => {
       res.send(response);
-    },
-    req
+    }
   );
 });
 

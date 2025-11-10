@@ -15,7 +15,6 @@ const dms_features = {
   DocumentType_IN_HIRARCHY: "DocumentType_IN_HIRARCHY",
   EMPTY_TEMP_ON_DOWNLOAD: "EMPTY_TEMP_ON_DOWNLOAD",
   DOCUMENT_NAME_DUPLICATION: "DOCUMENT_NAME_DUPLICATION",
-  BASIC_WATERMARK: "BASIC_WATERMARK",
 };
 
 const banks = {
@@ -30,7 +29,6 @@ const banks = {
       dms_features.EMPTY_TEMP_ON_DOWNLOAD,
       dms_features.DocumentType_IN_HIRARCHY,
       dms_features.DOCUMENT_NAME_DUPLICATION,
-      // dms_features.BASIC_WATERMARK,
     ],
     excludedFeatures: [],
   },
@@ -61,23 +59,11 @@ const banks = {
     name: "everest",
     logo: "watermark/everest.png",
     fullName: "Everest Bank",
-    domain: "everestbank.com",
-    feautres: [dms_features.DEFAULT_MAKER_CHECKER_DOCUMENTS, dms_features.EDIT_ATTACHMENTS],
-    excludedFeatures: [],
-  },
-  epf: {
-    name: "epf",
-    fullName: "Employees Provident Fund",
-    domain: "epf.org.np",
-    logo: "watermark/epf.png",
+    domain: "ebl.com.np",
     feautres: [
       dms_features.DEFAULT_MAKER_CHECKER_DOCUMENTS,
       dms_features.EDIT_ATTACHMENTS,
-      dms_features.EMPTY_TEMP_ON_DOWNLOAD,
-      dms_features.DocumentType_IN_HIRARCHY,
       dms_features.DOCUMENT_NAME_DUPLICATION,
-      dms_features.UPLOAD_ATTACHMENT_MODAL,
-      // dms_features.BASIC_WATERMARK,
     ],
     excludedFeatures: [],
   },
@@ -94,10 +80,8 @@ switch (VENDOR_ENV.vendor) {
     selectedVendor = banks.citizen.name;
   case banks.everest.name:
     selectedVendor = banks.everest.name;
-  case banks.epf.name:
-    selectedVendor = banks.epf.name;
   default:
-    selectedVendor = banks.epf.name;
+    selectedVendor = banks.everest.name;
 }
 
 // Only include feature for this vendor

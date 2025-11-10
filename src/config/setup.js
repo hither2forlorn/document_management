@@ -40,6 +40,7 @@ const {
 const { resolve } = require("path");
 const DistrictJSON = require("./json/District");
 const ProvinceJSON = require("./json/Province");
+const { default: axios } = require("axios");
 
 /**
  *
@@ -252,6 +253,113 @@ router.get("/seed/everest", async (req, res, next) => {
   }
 });
 
+router.get("/account-list", (req, res, next) => {
+  console.log("here");
+  const ac = [
+    {
+      id: "1",
+      acct: "11111",
+      acctName: "Hari prasad",
+      custId: "234234",
+      branch: "kathmandu",
+      schmCode: "5555",
+      idNum: "123456",
+    },
+    {
+      id: "2",
+      acct: "22222",
+      acctName: "Gopal prasad",
+      custId: "234234",
+      branch: "kathmandu",
+      schmCode: "5555",
+      idNum: "123456",
+    },
+    {
+      id: "3",
+      acct: "33333",
+      acctName: "Naryan Ghimire",
+      custId: "234234",
+      branch: "kathmandu",
+      schmCode: "5555",
+      idNum: "123456",
+    },
+  ];
+  const accountList = {
+    id: "1",
+    acct: "11111",
+    acctName: "Hari prasad",
+    custId: "234234",
+    branch: "kathmandu",
+    schmCode: "5555",
+    idNum: "123456",
+  };
+  // {
+  //   id: "2",
+  //   acct: "22222",
+  //   acctName: "Gopal prasad",
+  //   custId: "234234",
+  //   branch: "kathmandu",
+  //   schmCode: "5555",
+  //   idNum: "123456",
+  // },
+  // {
+  //   id: "3",
+  //   acct: "33333",
+  //   acctName: "Naryan Ghimire",
+  //   custId: "234234",
+  //   branch: "kathmandu",
+  //   schmCode: "5555",
+  //   idNum: "123456",
+  // }
+
+  res.json({
+    data: accountList,
+    msg: "success",
+  });
+});
+
+router.get("/external-api", async (req, res, next) => {
+  console.log(req.query.accNo, "req.query");
+  const acNo = req?.query?.accNo;
+  try {
+    const response = await axios.post("http://localhost:9999/ebl-api", {
+      functionName: "SchmDetail",
+      requestData: {
+        accountNo: acNo,
+      },
+    });
+
+    console.log(response, "------------========response=============11111");
+
+    const queryResult = response?.data?.QueryResult; // Accessing QueryResult array
+
+    const formattedOutput = queryResult?.map((result) => ({
+      value: result.IDNUM || "",
+      label: result.ACCT || "",
+      accountName: result.ACCTNAME || "",
+      branch: result.BRANCH || "",
+      schmCode: result.SCHMCODE || "",
+      cid: result.CUSTID || "",
+      idNum: result.IDNUM || "",
+      statusId: result.ACCTSTATUS || "1", // Assuming statusId as string
+    }));
+
+    setTimeout(() => {
+      res.json({
+        data: formattedOutput,
+        msg: "success",
+      });
+    }, 2000); // 2000 milliseconds = 2 seconds
+  } catch (e) {
+    console.log("------------error on api fetch---------------");
+    console.log(e.message);
+    res.status(500).json({
+      msg: "error",
+      error: e.message,
+    });
+  }
+});
+
 router.get("/view", async (req, res, next) => {
   let query = await fs.readFileSync(resolve(__dirname, "../sql/view.sql")).toString();
   let query1 = await fs.readFileSync(resolve(__dirname, "../sql/view2.sql")).toString();
@@ -270,33 +378,6 @@ router.get("/view", async (req, res, next) => {
 
     res.send("<h1>View Seed completed</h1>");
   }
-});
-
-router.get("/external-api", (req, res, next) => {
-  const accountList = [
-    {
-      id: "1",
-      name: "Hari prasad",
-      accountNumber: "111111111111111",
-      cif: "234234",
-    },
-    {
-      id: "2",
-      name: "Goal prasad",
-      accountNumber: "111111111111112",
-      cif: "234234",
-    },
-    {
-      id: "3",
-      name: "Naryan Ghimire",
-      accountNumber: "1111111111111113",
-      cif: "234234",
-    },
-  ];
-  res.json({
-    data: accountList,
-    msg: "success",
-  });
 });
 
 // router.get("/flush", async (req, res, next) => {

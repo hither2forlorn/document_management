@@ -114,18 +114,23 @@ module.exports.deleteItem = async (Model, item, payload, callback, req) => {
     }
   }
 
+  // To maintain log
+  let log_query;
+
   canDelete(item.type, payload.id, (canDelete) => {
     if (canDelete || item.isMaker) {
       Model.update(
         { isDeleted: true },
         {
+          // To maintain log
+          logging: (sql) => (log_query = sql),
           raw: true,
           where: { id: item.id },
         }
       )
-        .then((_) => {
-          if (req) createLog(req, item.type, item.id);
 
+        .then((_) => {
+          createLog(req, constantLogType.ATTACHMENT, item.id, log_query);
           DeleteLog.create({
             itemId: item.id,
             itemType: item.type,

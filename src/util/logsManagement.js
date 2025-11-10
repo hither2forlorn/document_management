@@ -11,25 +11,6 @@ const {
 } = require("../config/database");
 
 const _ = require("lodash");
-
-const USER = "user";
-const USER_STATUS = "userStatus";
-const ROLE = "role";
-const DEPARTMENT = "department";
-const BRANCH = "branch";
-const DOCUMENT = "document";
-const ATTACHMENT = "attachment";
-const LETTER = "letter";
-const DOCUMENT_CONDITION = "documentCondition";
-const DOCUMENT_TYPE = "documentType";
-const DOCUMENT_INDEX = "documentIndex";
-const LOCATION_MAP = "locationMap";
-const LOCATION_TYPE = "locationType";
-const LANGUAGE = "language";
-const FORM = "form";
-const MEMO = "memo";
-const SECURITY_HIERARCHY = "security_hierarchy";
-
 /**
  * constantLogType is the type of features that is to be logged.
  *
@@ -43,45 +24,7 @@ const constantLogType = {
   LOCATION_MAP: 6,
   DOCUMENT_TYPES: 7,
   DOCUMENT_INDEX: 8,
-  DEPARTMENT: 9,
-  BRANCH: 10,
 };
-
-function findModelType(name) {
-  switch (name) {
-    case DOCUMENT:
-      return 1;
-
-    case ATTACHMENT:
-      return 2;
-
-    case ROLE:
-      return 3;
-
-    case USER:
-      return 4;
-
-    case SECURITY_HIERARCHY:
-      return 5;
-
-    case LOCATION_MAP:
-      return 6;
-
-    case DOCUMENT_TYPE:
-      return 7;
-
-    case DOCUMENT_INDEX:
-      return 8;
-
-    case DEPARTMENT:
-      return 9;
-
-    case BRANCH:
-      return 10;
-    default:
-      return name;
-  }
-}
 
 /**
  *
@@ -110,13 +53,13 @@ const createLog = async (req, modelTypeId, modelValueId, query, previousValue) =
   const body = {
     modelValueId: modelValueId,
     // query: JSON.stringify(query),
-    createdBy: req?.payload?.id ? req.payload.id : "1",
+    createdBy: req.payload.id,
     body: JSON.stringify(req?.body || {}) || null,
-    modelTypeId: typeof modelTypeId == "string" ? findModelType(modelTypeId) : modelTypeId,
+    modelTypeId,
     operation,
-    previousValue: previousValue ? JSON.stringify(previousValue) : null,
+    previousValue: JSON.stringify(previousValue),
     url,
-    diff: diff ? JSON.stringify(diff) : null,
+    diff: JSON.stringify(diff),
     statusCode,
     statusMessage,
     ipAddress,

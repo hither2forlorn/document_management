@@ -1,7 +1,7 @@
 
--- DROP TABLE gdms_main.dbo.bok_lms;
+-- DROP TABLE gdms_citizen.dbo.bok_lms;
 
-CREATE TABLE gdms_main.dbo.bok_lms (
+CREATE TABLE gdms_citizen.dbo.bok_lms (
 	CPRno float NULL,
 	BranchName varchar(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
 	CustName varchar(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
@@ -14,9 +14,9 @@ CREATE TABLE gdms_main.dbo.bok_lms (
 
 -- Drop table
 
--- DROP TABLE gdms_main.dbo.cbs_bok;
+-- DROP TABLE gdms_citizen.dbo.cbs_bok;
 
-CREATE TABLE gdms_main.dbo.cbs_bok (
+CREATE TABLE gdms_citizen.dbo.cbs_bok (
 	TITLE varchar(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
 	NATIONALITY varchar(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
 	NAME varchar(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
@@ -57,22 +57,22 @@ CREATE TABLE gdms_main.dbo.cbs_bok (
 );
 
 
-INSERT INTO gdms_main.dbo.bok_lms (CPRno,BranchName,CustName,BOKID,[type],ActionTaken,ApprovedDate,URL) VALUES
+INSERT INTO gdms_citizen.dbo.bok_lms (CPRno,BranchName,CustName,BOKID,[type],ActionTaken,ApprovedDate,URL) VALUES
 	 (81.0,N'HEAD OFFICE',N'Board',N'BOK33006',N'MeMo',N'Approved',N'28/09/2020',N'https://bokapps.bok.com.np/MemoRandum?cprno=d4ZSte5GoeWFjIxDtU6fNw==&SPHostUrl=http://skale-app/sites/skale/'),
 	 (82.0,N'HEAD OFFICE',N'Board of Directors'	,N'BOK330000',N'MeMo',N'Approved',N'28/09/2020',N'https://bokapps.bok.com.np/MemoRandum?cprno=nVcxoVoatZuAJPJm8tIrxA==&SPHostUrl=http://skale-app/sites/skale/');
 
 
-	INSERT INTO gdms_main.dbo.cbs_bok (TITLE,NATIONALITY,NAME,GENDER,MARITAL_STATUS,DOB,NIC,PRIMARY_EMAIL,CONTACT_NUMBER_1,CONTACT_NUMBER_2,CUST_PERM_ADDR1,CUST_PERM_ADDR2,CUST_PERM_CITY_CODE,CUST_PERM_STATE_CODE,CUST_COMU_ADDR1,CUST_COMU_ADDR2,CUST_COMU_CITY_CODE,CUST_COMU_STATE_CODE,BRANCH,ACCOUNT_NUMBER,BOK_ID,ACCOUNT_TYPE,CURRENT_BALANCE,TYPE_OF_FACILITY,FACILITY_AMOUNT_NPR,TENOR,INTEREST_RATE,PRODUCT,GROUP_ID,GROUP_NAME,GROUP_CONTROLLER,[Number],[DATE],REGISTERED_ADDRESS,REGISTRATION_VALIDITY,PAN_NUMBER,TAX_PAYERS) VALUES
+	INSERT INTO gdms_citizen.dbo.cbs_bok (TITLE,NATIONALITY,NAME,GENDER,MARITAL_STATUS,DOB,NIC,PRIMARY_EMAIL,CONTACT_NUMBER_1,CONTACT_NUMBER_2,CUST_PERM_ADDR1,CUST_PERM_ADDR2,CUST_PERM_CITY_CODE,CUST_PERM_STATE_CODE,CUST_COMU_ADDR1,CUST_COMU_ADDR2,CUST_COMU_CITY_CODE,CUST_COMU_STATE_CODE,BRANCH,ACCOUNT_NUMBER,BOK_ID,ACCOUNT_TYPE,CURRENT_BALANCE,TYPE_OF_FACILITY,FACILITY_AMOUNT_NPR,TENOR,INTEREST_RATE,PRODUCT,GROUP_ID,GROUP_NAME,GROUP_CONTROLLER,[Number],[DATE],REGISTERED_ADDRESS,REGISTRATION_VALIDITY,PAN_NUMBER,TAX_PAYERS) VALUES
 	 (N'M/S',N'NP',N'TRISHUL AUTOMOBILE',N'O',N'',N'',N'REG#54150/057/58',N'diliptrishul@hotmail.com',4377076.0,4492295.0,N'DHAPASI',N'KATHMANDU',N'KTM',N'BAGMA',N'TEENKUNE',N'KATHMANDU',N'KTM',N'BAGMA',0.0,N'510000038200NPR',N'BOK33006',N'PCA',0.0,N'PCA',0.0,N'21.08.08 00:00:00',N'',N'DLB',N'C2750',N'TRISHUL GROUP',N'',N'REG#54150/057/58',N'',N'',N'',N'',N''),
 	 (N'M/S',N'NP',N'TRISHUL AUTOMOBILE',N'O',N'',N'',N'REG#54150/057/58',N'diliptrishul@hotmail.com',4377076.0,4492295.0,N'DHAPASI',N'KATHMANDU',N'KTM',N'BAGMA',N'TEENKUNE',N'KATHMANDU',N'KTM',N'BAGMA',0.0,N'510000638200NPR',N'BOK33000',N'PCA',0.0,N'PCA',0.0,N'29.11.13 00:00:00',N'',N'DLB',N'C2750',N'TRISHUL GROUP',N'',N'REG#54150/057/58',N'',N'',N'',N'',N'');
 
 
 -- --one by one
 -- create view v_cbs AS
--- select bl.* from gdms_main.dbo.cbs_bok bl
+-- select bl.* from gdms_citizen.dbo.cbs_bok bl
 
 -- -- -- -- one by one
 -- create view v_lms AS
--- select bl.* from gdms_main.dbo.bok_lms bl
+-- select bl.* from gdms_citizen.dbo.bok_lms bl
 
 

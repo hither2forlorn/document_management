@@ -1,5 +1,5 @@
 const { Attachment } = require("../../config/database");
-const { checkFtp, ftp } = require("../../config/filesystem");
+const { ftp, config, checkFtp } = require("../../config/filesystem");
 const watermark = require("../../util/watermark");
 const fs = require("fs");
 const _ = require("lodash");
@@ -16,16 +16,13 @@ const {
   handleTextPDFWatermark,
   handleDecryptFile,
   handleEncryptFile,
-  handleTextPDFWatermarkCustom,
 } = require("./pythonGlobalFunctions");
-const moment = require("moment");
 const { getAttachmentById, getDocument } = require("./getModelDetail");
 const { createLog, constantLogType, findPreviousData } = require("../../util/logsManagement");
-const { getBankObject, dms_features, includeThisFeature } = require("../../config/selectVendor");
+const { getBankObject, dms_features, includeThisFeature, banks, onlyForThisVendor } = require("../../config/selectVendor");
 const EasyFtp = require("easy-ftp");
 const { FTP } = require("../../config/credentials");
-const attachment = require("../models/attachment");
-
+const archiver = require("archiver");
 function getFileType(fileType) {
   if (fileType.includes("image")) {
     return "image";
@@ -61,7 +58,7 @@ async function uncompressAttachment(filePath) {
  * @param {*} url
  */
 const downlaodFile = async (url, colseWhenDone) => {
-  const SERVER_URL = "http://localhost:8181/api";
+  const SERVER_URL = "https://localhost:443/api";
   const fileName = path.basename(url);
   const fileDestination = "temp/";
   const downloadRequest = http.get(SERVER_URL + url, (res) => {
@@ -72,7 +69,7 @@ const downlaodFile = async (url, colseWhenDone) => {
     //   error handeling
     fileStream.on("error", (err) => {
       console.log("Error in the filestream");
-      console.log(err);
+      console.log(err.message);
     });
 
     fileStream.on("close", () => {
@@ -102,17 +99,55 @@ const downlaodFile = async (url, colseWhenDone) => {
  * @param {Boolean} dontWatermarkç
  * @param {Object} user
  */
-async function downloadAttachmentFromFtp(
-  localPath,
-  ftpPath,
-  attachId,
-  dontWatermark,
-  user,
-  customWatermarkID,
-  isPreferredWatermark,
-  userId,
-  customWatermarkValue
-) {
+async function downloadAttachmentFromFtp(localPath, ftpPath, attachId, dontWatermark, user) {
+  let doc;
+  if (attachId) doc = await getDocument(attachId, true);
+
+  const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
+  try {
+    if (isConnected) {
+      ftp.connect(config);
+      const isSuccess = await new Promise((resolve) => {
+        ftp.download(ftpPath, localPath, async (err) => {
+          if (err) {
+            logger.error(err);
+            resolve(false);
+          } else {
+            let attach = await getAttachmentById(attachId);
+            // Decrypt data  when Downloading
+            if (typeof doc == "object" && attach.isEncrypted) {
+              await handleDecryptFile({ local: localPath });
+            }
+            attach.localPath = localPath;
+            attach.hasEncryption = typeof doc == "object" && doc[0]?.hasEncryption ? doc[0]?.hasEncryption : false;
+
+            if (!dontWatermark) {
+              await handleTextPDFWatermark(attach, user?.email || "", getBankObject().logo);
+            }
+
+            if (includeThisFeature(dms_features, includeThisFeature.EMPTY_TEMP_ON_DOWNLOAD)) {
+              setTimeout(() => {
+                emptyTemp();
+              }, process.env.EMPTY_TEMP_DURATION || 30000);
+            }
+
+            resolve(true);
+          }
+        });
+      });
+      ftp.close();
+      return isSuccess;
+    } else {
+      throw new Error("Cannot Downlaod- Please check ftp server");
+      // return false;
+    }
+  } catch (e) {
+    console.log("FTP ERROR - UNABLE TO DOWNLOAD ATTACHEMENT ");
+    console.log(e.code, e.message);
+  }
+}
+
+async function downloadAttachmentFromFtpZip(localPath, ftpPath, attachId, dontWatermark, user, customWatermarkValue) {
   let doc;
   if (attachId) doc = await getDocument(attachId, true);
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
@@ -131,7 +166,7 @@ async function downloadAttachmentFromFtp(
           logger.error(err);
           resolve(false);
         } else {
-          // Decrypt data  when Downloading
+          // Decrypt data when Downloading
           if (typeof doc == "object" && doc[0]?.hasEncryption) {
             await handleDecryptFile({ local: localPath });
           }
@@ -141,213 +176,117 @@ async function downloadAttachmentFromFtp(
 
           if (!dontWatermark) {
             let date = new Date().toLocaleDateString();
-            if (includeThisFeature(dms_features.BASIC_WATERMARK)) {
-              await handleTextPDFWatermark(
-                attach,
-                user?.email || "",
-                getBankObject().logo,
-                date,
-                customWatermarkID,
-                isPreferredWatermark,
-                userId,
-                customWatermarkValue
-              );
-            } else {
-              await handleTextPDFWatermarkCustom(
-                attach,
-                user?.email || "",
-                getBankObject().logo,
-                date,
-                customWatermarkID,
-                isPreferredWatermark,
-                userId,
-                customWatermarkValue
-              );
-            }
-
+            await handleTextPDFWatermark(attach, user?.email || "", getBankObject().logo, date, customWatermarkValue);
             const fileType = getFileType(attach.fileType);
-            await watermark("./temp" + attach.filePath, "temp/" + attach.filePath, fileType, user);
+            // await watermark("./temp" + attach.filePath, "temp/" + attach.filePath, fileType, user);
           }
 
-          // if (includeThisFeature(dms_features.EMPTY_TEMP_ON_DOWNLOAD)) {
-          //   setTimeout(() => {
-          //     emptyTemp();
-          //   }, process.env.EMPTY_TEMP_DURATION || 30000);
-          // }
+          // Wait for some time before zipping
+          setTimeout(async () => {
+            let newLocalPath = localPath.replace(/^((?:[^\/]+\/){3}).*/, "$1");
+            if (fs.existsSync(newLocalPath) && fs.lstatSync(newLocalPath).isDirectory()) {
+              const zipFileName = `${doc[0].otherTitle}.zip`.trim();
+              const outputPath =
+                "C:\\Gentech\\GDMS\\general-dms-api\\temp\\zip\\" + zipFileName || process.env.ZIP_FILE_PATH + zipFileName;
+              const output = fs.createWriteStream(outputPath);
+              const archive = archiver("zip", {
+                zlib: { level: 9 },
+              });
 
-          resolve(true);
+              output.on("close", () => {
+                console.log(archive.pointer() + " total bytes");
+                console.log("archiver has been finalized and the output file descriptor has closed.");
+                resolve(true);
+              });
+
+              archive.on("warning", (err) => {
+                if (err.code === "ENOENT") {
+                  console.warn(err);
+                } else {
+                  throw err;
+                }
+              });
+
+              archive.on("error", (err) => {
+                throw err;
+              });
+
+              archive.pipe(output);
+              archive.directory(newLocalPath, false);
+              archive.finalize();
+            } else {
+              logger.error(error);
+              console.error("Local path is not a directory.");
+              resolve(false);
+            }
+          }, 10);
         }
       });
     });
     ftp.close();
     return isSuccess;
   } else {
-    throw new Error("Cannot Downlaod- Please check ftp server");
-
-    // return false;
+    throw new Error("Cannot Download - Please check ftp server");
   }
 }
-
 /**
  * Function to upload files to FTP server
  * @method module:AttachmentModule#uploadAttachments
  * @param {Array<Object>} attachments
  */
-async function uploadAttachments(attachments, res, req, archived) {
+async function uploadAttachments(attachments, res, req) {
   const doc = await getDocument(attachments[0].itemId);
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
+  // for log
   let log_query;
 
-  // FTP configuration
-  const config = {
-    host: FTP.HOST,
-    port: FTP.PORT,
-    username: FTP.USERNAME,
-    password: FTP.PASSWORD,
-    type: FTP.TYPE,
-  };
+  // prepare array for local and ftp path
+  const uploadArr = attachments.map((att) => {
+    return {
+      remote: att.filePath,
+      local: att.localPath,
+    };
+  });
 
-  let attachmentIds = [];
-
-  for (const attachment of attachments) {
-    // Check if any previous versions of the attachment exist (same itemId, name, both deleted and non-deleted)
-    let existingAttachments = await Attachment.findAll({
-      where: {
-        itemId: attachment.itemId,
-        name: attachment.name,
-      },
-      order: [['updatedAt', 'DESC']], // Sort by 'updatedAt' in descending order to get the latest one
-    });
-
-    // Set the file path where the attachment should be saved
-    const baseFilePath = `/Citizenship/document/${attachment.itemId}`; // The directory where files are stored
-    const baseFileName = attachment.name.split('.')[0];
-    const extension = attachment.name.split('.').pop();
-
-    let updatedFilePath = `${baseFilePath}/${attachment.name}`; // Default new file path
-    let updatedDateTime = moment(); // Initialize as current time (in case no previous attachment exists)
-
-    // If there are existing attachments (both deleted and non-deleted), handle versioning
-    if (existingAttachments.length > 0) {
-      const latestAttachment = existingAttachments[0]; // Get the most recently updated version
-
-      if (!archived) {
-        // Check if there's an existing attachment with the same name and itemId, and mark it as deleted
-        if (latestAttachment.isDeleted !== 1) {
-          await Attachment.update(
-            { isDeleted: 1 },
-            { where: { id: latestAttachment.id } }
-          );
-        }
-
-        // Use the updatedAt field from the most recent attachment (deleted or non-deleted)
-        updatedDateTime = moment(latestAttachment.updatedAt); // Convert to moment object
-
-        // Create versioned name for the new file (based on the updatedAt of the previous version)
-        const updatedVersionedName = `${baseFileName}__version_${updatedDateTime.format('YYYY-MM-DD-HH-mm-ss')}.${extension}`;
-        const updatedVersionedFilePath = `${baseFilePath}/${updatedVersionedName}`; // Versioned file path
-
-        updatedFilePath = updatedVersionedFilePath;
-        updatedUrl = updatedFilePath; // Same path used for URL in this case
-
-        // Correct the local path for where files are actually stored
-        const baseLocalPath = process.env.FILE_SERVER_LOCAL_BASE_PATH;
-        const currentFilePath = path.join(baseLocalPath, latestAttachment.filePath); // Full path of the current file
-        const newFilePath = path.join(baseLocalPath, updatedVersionedFilePath);// Full path for the renamed file
-        if (fs.existsSync(currentFilePath)) {
-          try {
-            fs.renameSync(currentFilePath, newFilePath);
-
-            await Attachment.update(
-              {
-                filePath: updatedVersionedFilePath, // Update the file path
-                url: updatedVersionedFilePath,
-              },
-              { where: { id: latestAttachment.id } } // Update the previous (old) attachment
-            );
-          } catch (err) {
-            console.error("Error renaming file locally:", err);
-          }
-        } else {
-          console.error(`File does not exist: ${currentFilePath}`);
-        }
-      }
-    }
-
-    // If not archived, create a new attachment
-    if (!archived) {
-      const newFilePath = `${baseFilePath}/${attachment.name}`; // Save new file directly to Citizenship folder
-      const newAttachment = await Attachment.create(
-        { ...attachment, url: newFilePath, updatedDate: updatedDateTime.format('YYYY-MM-DD HH:mm:ss') },
-        {
-          logging: (sql) => (log_query = sql),
-        }
-      );
-      attachmentIds.push(newAttachment.id); // Collect the newly created attachment ID
-
-      const previousValue = await findPreviousData(constantLogType.ATTACHMENT, doc.id, req.method);
-      await createLog(req, constantLogType.ATTACHMENT, newAttachment.id, log_query, previousValue);
-      // Handle OCR
-      if (doc.dataValues.hasQuickQcr) {
-        await Promise.all(
-          attachments.map(async (att, index) => {
-            const output = await handleOCRFile(att);
-            // Update attachment with OCR result
-            attachments[index].ocr = true;
-            attachments[index].attachmentDescription = output?.substring(0, 4000);
-
-            // Update the Attachment table with OCR details
-            await Attachment.update(
-              {
-                ocr: true,
-                attachmentDescription: attachments[index].attachmentDescription,
-              },
-              { where: { id: newAttachment.id } }
-            );
-          })
-        );
-      }
-
-      // Handle encryption
-      if (doc.dataValues.hasEncryption) {
-        await Promise.all(
-          attachments.map(async (att) => {
-            const encryptedOutput = await handleEncryptFile({
-              remote: att.filePath,
-              local: att.localPath,
-            });
-
-            // Update Attachment table to mark the file as encrypted (you can modify this part based on your requirements)
-            await Attachment.update(
-              {
-                isEncrypted: true, // Assuming there's an 'isEncrypted' column
-                encryptedFilePath: encryptedOutput?.filePath, // Assuming the encrypted file path needs to be stored
-              },
-              { where: { id: newAttachment.id } }
-            );
-          })
-        );
-      }
-      await Attachment.update(
-        { isDeleted: 0 },
-        { where: { id: newAttachment.id } }
-      );
-    }
+  // // Handle Quick OCR
+  if (doc?.dataValues?.hasQuickQcr) {
+    await Promise.all(
+      attachments.map(async (att, index) => {
+        //  local path of file- eg temp/file.pdf
+        const output = await handleOCRFile(att);
+        attachments[index].ocr = true;
+        attachments[index].attachmentDescription = output?.substring(0, 4000);
+      })
+    );
   }
+  // Force hasEncryption to true only for Everest
+  const shouldEncrypt = onlyForThisVendor([banks.everest.name]) ? true : doc?.dataValues?.hasEncryption;
 
-  // FTP Upload
-  const uploadArr = attachments.map((att) => ({
-    remote: att.filePath,
-    local: att.localPath,
-  }));
-
+  if (shouldEncrypt) {
+    await Promise.all(
+      attachments.map(async (att) => {
+        // local path of file, e.g., temp/file.pdf
+        return await handleEncryptFile({
+          remote: att.filePath,
+          local: att.localPath,
+        });
+      })
+    );
+  }
   if (isConnected) {
     const ftp = new EasyFtp();
+    const config = {
+      host: FTP.HOST,
+      port: FTP.PORT,
+      username: FTP.USERNAME,
+      password: FTP.PASSWORD,
+      type: FTP.TYPE,
+    };
+
     ftp.connect(config);
 
     const isSuccess = await new Promise((resolve) => {
       ftp.upload(uploadArr, "/", (err) => {
-        ftp.close();
         if (err) {
           console.log(err);
           logger.error(err);
@@ -358,20 +297,32 @@ async function uploadAttachments(attachments, res, req, archived) {
       });
     });
 
-    if (!isSuccess) {
-      console.log("FTP upload failed");
+    if (isSuccess) {
+      // To maintain log
+      // const previousValue = await findPreviousData(constantLogType.ATTACHMENT, doc.id, req.method);
+      const results = await Promise.all(
+        attachments.map(async (attachment) => {
+          const result = await Attachment.create(attachment, {
+            logging: (sql) => (log_query = sql),
+          });
+
+          // For log
+          // await createLog(req, constantLogType.ATTACHMENT, result.id, log_query, previousValue);
+          return { ...result, dataValues: { ...result?.dataValues, documentIndex: attachment?.documentIndex } };
+        })
+      );
+      ftp.close();
+      return results;
+    } else {
+      console.log("ftp upload failed");
       return false;
     }
   } else {
     console.log("FTP not connected");
-    res.status(500).send({ success: false, message: "FTP not connected" });
+    res.status(500).send({ success: false, message: "Ftp Not connected" });
     return false;
   }
-
-  return attachmentIds;
 }
-
-
 
 /**
  *  attachment upload for BPM
@@ -384,14 +335,6 @@ async function uploadAttachmentBPM(attachments, apiUrl) {
   let resData = {};
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
     const uploadArr = attachments.map((att) => {
       return {
@@ -435,28 +378,22 @@ async function uploadAttachmentBPM(attachments, apiUrl) {
  * @method module:AttachmentModule#downloadAttachmentsWithWatermark
  * @param {Array<Object>} allAttachments
  */
-async function downloadAttachmentsWithWatermark(allAttachments, user) {
+async function downloadAttachmentsWithWatermark(allAttachments) {
   const watermarkPath = "temp/watermark";
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
+    // const attachments = onlyForThisVendor(banks.rbb)
+    // ? allAttachments
+    // : _.filter(allAttachments, (at) => {
+    //     const isExist = fs.existsSync("temp/" + at.filePath);
+    //     return !isExist;
+    //   });
 
-    const attachments = allAttachments;
-
-    // to use cache use this
-    // const attachments = _?.filter(allAttachments, (at) => {
-    //   const isExist = fs.existsSync("temp/" + at.filePath);
-    //   return !isExist;
-    // });
-
+    const attachments = _.filter(allAttachments, (at) => {
+      const isExist = fs.existsSync("temp/" + at.filePath);
+      return !isExist;
+    });
     const downloadArr = attachments.map((att) => {
       return {
         remote: att.filePath,
@@ -490,7 +427,7 @@ async function downloadAttachmentsWithWatermark(allAttachments, user) {
       await Promise.all(
         attachments.map((attachment) => {
           const fileType = getFileType(attachment.fileType);
-          return watermark(watermarkPath + attachment.filePath, "temp/" + attachment.filePath, fileType, user);
+          return watermark(watermarkPath + attachment.filePath, "temp/" + attachment.filePath, fileType);
         })
       ).catch((err) => logger.error(err));
     }
@@ -508,23 +445,15 @@ async function downloadAttachmentsWithWatermark(allAttachments, user) {
  *
  * When previewing document, it downlaod all available pictures
  */
-async function downloadAttachments(allAttachments, isWatermark, user) {
+async function downloadAttachments(allAttachments, isWatermark) {
   const isConnected = await new Promise((resolve) => checkFtp((isConnected) => resolve(isConnected)));
   if (isWatermark && isConnected) {
-    return await downloadAttachmentsWithWatermark(allAttachments, user);
+    return await downloadAttachmentsWithWatermark(allAttachments);
   }
   if (isConnected) {
-    const ftp = new EasyFtp();
-    const config = {
-      host: FTP.HOST,
-      port: FTP.PORT,
-      username: FTP.USERNAME,
-      password: FTP.PASSWORD,
-      type: FTP.TYPE,
-    };
     ftp.connect(config);
 
-    const attachments = _?.filter(allAttachments, (at) => !fs.existsSync("temp/" + at.filePath));
+    const attachments = _.filter(allAttachments, (at) => !fs.existsSync("temp/" + at.filePath));
 
     const downloadArr = attachments.map((att) => {
       return {
@@ -569,4 +498,5 @@ module.exports = {
   compressAttachment,
   uncompressAttachment,
   uploadAttachmentBPM,
+  downloadAttachmentFromFtpZip,
 };

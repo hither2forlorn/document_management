@@ -32,7 +32,7 @@ async function executePython(pyFilePath, data) {
     pyshell.on("message", function (message) {
       result = JSON.stringify(message);
       // thre space to seperate data
-      // if (message != "") result += message + "vbgf   ";
+      if (message != "") result += message + "   ";
     });
 
     pyshell.on("stderr", function (stderr) {
@@ -41,8 +41,8 @@ async function executePython(pyFilePath, data) {
 
     pyshell.end(function (err, code, signal) {
       if (err) reject(err);
-      console.log("====================== ");
-      console.log(result);
+      // console.log("====================== ");
+      // console.log(result);
       resolve(result);
     });
   });

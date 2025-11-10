@@ -27,13 +27,19 @@ const sequelize = new Sequelize(DB.NAME, DB.USERNAME, DB.PASSWORD, {
   port: DB.PORT,
   dialect: DB.DIALECT,
   logging: false,
+  dialectOptions: {
+    options: {
+      requestTimeout: 120000,
+    },
+  },
   pool: {
     max: 10,
     min: 0,
-    acquire: 60000,
+    acquire: 30000,
     idle: 10000,
   },
 });
+
 const bok_lms_Sequelize = new Sequelize("TOG_BOK_UAT_Final_Live", "dms", "Connect@dms", {
   host: "skale-db.bok.com.np",
   port: 1433,

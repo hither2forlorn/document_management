@@ -1,44 +1,25 @@
 const { otpEmailTemplate } = require("../../util/email_template");
 const { sendMessage } = require("../../util/send_email");
 const { OtpCode } = require("../../config/database");
-const {} = require("../");
+const { } = require("../");
 const Op = require("sequelize").Op;
 const randomize = require("randomatic");
-const { generateJWT } = require("../../util/jwt");
+const bcrypt = require("bcryptjs");
+const client = require("../../config/redis")
 
-module.exports.sendOtpByEmail = async ({ email }) => {
+
+
+
+module.exports.sendOtpByEmail = async ({ userId, email }) => {
   const randomValue = randomize("0", 6);
-  await OtpCode.create({
-    code: randomValue,
-    email: email,
-    isValid: true,
-    expiryDate: Date.now() + 100 * 60 * 1000, // 15 minutes
-  });
-  const success = await sendMessage(otpEmailTemplate(email, randomValue)).catch((err) => console.log(err));
-  return success
-    ? { success: true, message: "Email sent", otpCode: randomValue }
-    : { success: false, message: "Email not sent. Please try again later." };
-};
-
-module.exports.verifyOtp = async ({ code, email, phone }) => {
-  const searchQuery = {
-    code: code,
-    isValid: true,
-    ...(email ? { email } : {}),
-    ...(phone ? { phone } : {}),
-    expiryDate: {
-      [Op.gt]: Date.now(),
-    },
-  };
-  const otp = await OtpCode.findOne({
-    where: searchQuery,
-    attributes: ["id", "isValid"],
-    order: [["createdAt", "DESC"]],
-  });
-  if (otp && otp.isValid) {
-    await OtpCode.update({ isValid: false }, { where: { id: otp.id } });
-    token = generateJWT({ payload: { email, phone } }, 100);
-    return { success: true, token };
+  const hashCode = await bcrypt.hash(randomValue, 10);
+  try {
+    const emailSent = await sendMessage(otpEmailTemplate(email, randomValue));
+    if (emailSent) {
+      await client.set(`otp:${userId}`, hashCode, "EX", 60)
+      return { success: true, message: "Email sent", otpCode: randomValue }
+    }
+  } catch (error) {
+    return { success: false, message: "Email not sent. Please try again later." };
   }
-  return { success: false, message: "Invalid Code" };
 };

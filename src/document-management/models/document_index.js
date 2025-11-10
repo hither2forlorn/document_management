@@ -27,8 +27,9 @@ module.exports = (sequelize, type) => {
     enum: {
       type: type.STRING,
     },
-    apiUrl:{
+    api: {
       type: type.STRING,
+      defaultValue: null,
     },
     validation: {
       type: type.TEXT,
@@ -41,6 +42,9 @@ module.exports = (sequelize, type) => {
     isRequired: {
       type: type.BOOLEAN,
       defaultValue: false,
+    },
+    api: {
+      type: type.STRING,
     },
     isShownInAttachment: {
       type: type.BOOLEAN,

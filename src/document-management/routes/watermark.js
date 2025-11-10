@@ -36,7 +36,6 @@ router.post("/watermark", (req, res, next) => {
   // console.log(req.body, "values");
   const upload = multer({ storage: watermarkStorage }).single("file");
   upload(req, res, function (err) {
-    console.log(req.body, "this is requestbody");
     // console.log(req.file.path, ":bodyand files");
     if (err instanceof multer.MulterError) {
       console.log("multer", err);

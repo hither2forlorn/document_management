@@ -69,6 +69,10 @@ SELECT DISTINCT d.id
 			THEN 'checked out'
 		WHEN d.statusId = 3
 			THEN 'Suspended'
+		WHEN d.statusId = 4
+			THEN 'Dormant'
+		WHEN d.statusId = 5
+			THEN 'Closed'
 		ELSE 'Unknown'
 		END DocumentStatus
 	,u.username

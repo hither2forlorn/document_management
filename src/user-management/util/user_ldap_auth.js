@@ -24,9 +24,7 @@ function getUserFromADBuffer(user) {
 function getUsers(callback) {
   const nonDuplicateUsers = [];
   getAllUsers((users) => {
-    console.log(users, "List of users called" );
     users.forEach((user) => {
-      console.log(user, "Iterating users" );
       const decodedUser = getUserFromADBuffer(user);
       const isContained = _.find(nonDuplicateUsers, {
         distinguishedName: decodedUser.distinguishedName,
@@ -47,7 +45,7 @@ function getUsers(callback) {
 async function getUsersBySuffix(client, suffix) {
   // var filter = `(&(objectCategory=person)(samaccountname=*))`;
   const opts = {
-    filter: "(objectClass=*)",
+    filter: "(objectClass=user)",
     scope: "sub",
   };
   const users = await new Promise((resolve, reject) => {
@@ -59,21 +57,44 @@ async function getUsersBySuffix(client, suffix) {
         resolve(searchList);
       }
       searchRes.on("searchEntry", (entry) => {
-         result += "Found entry: " + entry + "\n";
-         console.log("Search Entry =", entry.object);
+        // result += "Found entry: " + entry + "\n";
+        // console.log("Search Entry =", entry);
 
         searchList.push(entry);
       });
       searchRes.on("error", (err) => {
+        // result += "Search failed with " + err;
         resolve(searchList);
       });
       searchRes.on("end", (retVal) => {
+        // result += "Search results length: " + searchList.length + "\n";
         resolve(searchList);
       }); // searchRes.on("end",...)
     }); // client.search
   });
   return users;
 }
+
+// client.search("ou=users", opts, (err, res,err) => {
+//   // assert.ifError(err);
+
+//   res.on("searchRequest", (searchRequest) => {
+//     console.log("searchRequest: ", searchRequest.messageID);
+//   });
+//   res.on("searchEntry", (entry) => {
+//     console.log("entry: " + JSON.stringify(entry.object));
+//   });
+//   res.on("searchReference", (referral) => {
+//     console.log("referral: " + referral.uris.join());
+//   });
+//   res.on("error", (err) => {
+//     console.error("error: " + err.message);
+//   });
+//   res.on("end", (result) => {
+//     console.log("status: " + result.status);
+//   });
+// });
+// }
 
 /**
  * <p>This method is used to get all users from the Active directory of users</p>
@@ -93,7 +114,11 @@ async function getAllUsers(callback) {
         result += "Reader bind failed " + err;
         callback([]);
       }
+      // result += "Reader bind succeeded\n";
+      // console.log("Success", ldapOptions.suffixOne);
+      // result += `LDAP filter: ${filter}\n`;
       const clientsOne = await getUsersBySuffix(client, ldapOptions.suffixOne);
+
       let clientsTwo = [];
       if (ldapOptions.suffixTwo) {
         clientsTwo = await getUsersBySuffix(client, ldapOptions.suffixTwo);

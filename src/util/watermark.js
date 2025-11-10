@@ -1,7 +1,6 @@
 const { Watermark } = require("../config/database");
 const fs = require("fs");
-const jimpWatermark = require("mod-jimp-watermark");
-const moment = require("moment");
+const jimpWatermark = require("jimp-watermark");
 
 /**
  * Function to overlay/watermark image/text over image
@@ -10,18 +9,21 @@ const moment = require("moment");
  * @param {String} exportPath - Export path of the watermarked image
  * @param {Object} watermark  - Watermark object for watermarking the image
  */
-async function watermarkImage(filePath, exportPath, watermark, user) {
+async function watermarkImage(filePath, exportPath, watermark) {
   const options = {
     dstPath: exportPath,
-    text: `${user?.email || ""}  ${moment().format("YYYY-MM-DD")}`,
-    textSize: 4,
-    opacity: 0.5,
+    text: watermark.text,
+    textSize: 8,
+    opacity: 0.2,
   };
 
   if (watermark.isImage) {
-    // watermark for image
-    await jimpWatermark.addTextWithImageWatermark(filePath, watermark.image, options);
-
+    let imageData = new Buffer.from(watermark.image).toString("binary");
+    imageData = imageData.split(",").slice(1, imageData.length).join(",");
+    await fs.writeFile("./temp/watermark.jpg", imageData, "base64", function (err) {
+      if (err) console.log(err);
+    });
+    await jimpWatermark.addWatermark(filePath, "./watermark/watermark.jpg", options);
     return true;
   } else {
     await jimpWatermark.addTextWatermark(filePath, options);
@@ -29,7 +31,7 @@ async function watermarkImage(filePath, exportPath, watermark, user) {
   }
 }
 
-module.exports = async (filePath, exportPath, fileType, user) => {
+module.exports = async (filePath, exportPath, fileType) => {
   const watermarkDb = await Watermark.findOne({
     where: { isActive: true },
     raw: true,
@@ -38,10 +40,11 @@ module.exports = async (filePath, exportPath, fileType, user) => {
     switch (fileType) {
       // case "pdf":
       case "image":
-        await watermarkImage(filePath, exportPath, watermarkDb, user);
+        console.log(filePath, exportPath, watermarkDb);
+        await watermarkImage(filePath, exportPath, watermarkDb);
         break;
       default:
-        // fs.writeFileSync(mainFilePath, exportPath);
+        fs.writeFileSync(mainFilePath, exportPath);
         break;
     }
     return true;

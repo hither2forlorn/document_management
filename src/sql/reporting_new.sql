@@ -31,7 +31,6 @@ group by wd.branchCode ,branchName, totalDocuments, wd.Approved, wd.Pending
 
 
 
-
 -- documents information
 select d.identifier, d.otherTitle, d.name, d.isDeleted ,d.isApproved, dept.name department,b.name branch, am.createdAt ,(case when d.isApproved = 1 then am.updatedAt else null end ) approvedDate
 from documents d 

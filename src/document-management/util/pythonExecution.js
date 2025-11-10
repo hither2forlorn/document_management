@@ -5,7 +5,6 @@ const tasks = {
   decryption: "decryption",
   ocrWithWatermark: "ocrWithWatermark",
   imageOcr: "imageOcr",
-  pdfOcr: "pdfOcr",
   ftpPdfWatermarkOCR: "ftpPdfWatermarkOCR",
   ftpImageWatermarkOCR: "ftpImageWatermarkOCR",
   ftpOcrAllFiles: "ftpOcrAllFiles",
@@ -26,9 +25,7 @@ async function handlePyhonExecution(path, action) {
     case tasks.decryption:
       return await executePython("python/decryptFile.py", path);
     case tasks.imageOcr:
-      return await executePython("python/ocr_image.py", path);
-    case tasks.pdfOcr:
-      return await executePython("python/ocr_pdf.py", path);
+      return await executePython("python/imageOCR.py", path);
     case tasks.ocrWithWatermark:
       return await executePython("python/pdfOCRandWatermark.py", path);
     case tasks.textWatermarkPDF:

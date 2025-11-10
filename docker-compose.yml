@@ -1,0 +1,74 @@
+version: "3"
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "8000:80"
+      - "443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default
+      - ./docker/nginx/nginx.conf:/etc/nginx/sites-available/default
+    env_file: ./.env
+
+  # React appliction
+  frontend:
+    image: nodejs
+    container_name: react
+    build:
+      context: ../general-dms
+      dockerfile: ../general-dms/Dockerfile.dev
+    ports:
+      - "4001:3000"
+    networks:
+      - app-network
+
+  # Redis 
+  redis:
+    image: redis
+    container_name: redis
+    networks:
+        - app-network
+  
+  # Backend 
+  app:
+    image: nodejs
+    container_name: dms
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:8181"
+    # links:
+    #   - "db:database"
+    networks:
+      - app-network
+    env_file: ./docker/.docker.app.env
+    
+    # depends_on:
+    #   - db
+    # db:
+    #   image: mcr.microsoft.com/mssql/server:2019-latest
+    #   environment:
+    #     - ACCEPT_EULA=Y
+    #     - SA_PASSWORD=Admondtamang9@
+    #   # command: /bin/bash ./entrypoint.sh
+    #   restart: unless-stopped
+    #   networks:
+    #     - app-network
+    #   ports:
+    #     - "1433:1433"
+    #   volumes:
+    #     - db-data:/data
+    # - ./docker-entrypoint.sh:/entrypoint.sh
+    # - ./docker-db-init.sh:/db-init.sh
+    # - ./mssql-cars.sql:/db-init.sql
+    # volumes:
+    #   db-data:
+networks:
+  app-network:
+    driver: bridge
+# docker-compose up -d
+# docker-compose up -d --no-deps --build -> force rebuild
+#https://www.youtube.com/watch?v=-pTel5FojAQ&ab_channel=Codeching

@@ -6,21 +6,14 @@ const { Language } = require("../../config/database");
 const { languageValidation, languageValidationEdit } = require("../../validations/language");
 
 router.post("/language", validator(languageValidation), auth.required, (req, res, next) => {
-  // check if language already exist
-  Language.findOne({ where: { name: req.body.name } }).then((language) => {
-    if (language) {
-      return res.status(400).json({ message: "Language already exists" });
-    } else {
-      Language.create(req.body)
-        .then((_) => {
-          res.json({ success: true, message: "Successful!" });
-        })
-        .catch((err) => {
-          console.log(err);
-          res.json({ success: false, message: "Error!" });
-        });
-    }
-  });
+  Language.create(req.body)
+    .then((_) => {
+      res.json({ success: true, message: "Successful!" });
+    })
+    .catch((err) => {
+      console.log(err);
+      res.json({ success: false, message: "Error!" });
+    });
 });
 
 router.get("/language", auth.required, (req, res, next) => {
@@ -73,8 +66,7 @@ router.delete("/language/:id", auth.required, (req, res, next) => {
     req.payload,
     (response) => {
       res.send(response);
-    },
-    req
+    }
   );
 });
 

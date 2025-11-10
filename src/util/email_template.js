@@ -200,14 +200,11 @@ module.exports.hourlyAccessUserNotifylTemplate = ({ user: { name, email }, docum
     `<p>This is to inform that your document <b>"${document?.name || document?.otherTitle}</b> " has been access by ` +
     otherUser +
     `</br>` +
-    `at` +
-    ` ` +
-    new Date().toString() +
     `Thank You!` +
     `<br/>` +
     `General Technology` +
     `</p>`;
-  console.log(html);
+
   return {
     to: email,
     subject: "General DMS - Document Access Provided",

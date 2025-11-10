@@ -1,21 +1,20 @@
 const router = require("express").Router();
 const crypto = require("crypto");
-const NepaliDate = require("nepali-date-converter");
-const moment = require("moment-timezone");
-
-// const adbs = require('ad-bs-converter');
 // const oracledb = require("oracledb");
+
 //AUTHENTICATION
 const auth = require("../../config/auth");
 const logger = require("../../config/logger");
-const { deleteItem, DOCUMENT } = require("../../config/delete");
+const { deleteItem, DOCUMENT, BRANCH } = require("../../config/delete");
 const { canViewTheDocument } = require("../auth");
 //DATABASE
 const Fuse = require("fuse.js");
-var jwt = require("jsonwebtoken");
+const { excelData } = require("../sqlQuery/excelData");
+
 // For BOK CBS oracle database
 // const connection = require("../../config/oracle");
-const { Op } = require("sequelize");
+
+const Op = require("sequelize").Op;
 const DocumentAuditModel = require("../models/document_audit");
 const Sequelize = require("sequelize");
 const {
@@ -41,9 +40,7 @@ const {
   HourlyAccessMultiple,
   ApprovalMaster,
   SecurityHierarchy,
-  District,
-  Role,
-  ApprovalQueue,
+  Branch,
 } = require("../../config/database");
 const _ = require("lodash");
 const { getBOKIDs, verifyBOKID, getCustomerDetails, getBOKIDsCBS } = require("../sqlQuery/bok-view");
@@ -80,11 +77,11 @@ const { getSearchTree } = require("../../util/item_tree");
 const validator = require("../../util/validation");
 
 const { body, validationResult } = require("express-validator");
-const { Docs } = require("../../validations/docs");
+const { Docs, DocsCIF } = require("../../validations/docs");
 const { DocsEdit } = require("../../validations/docs");
 const { documentAttachment, associatedBokIdFromTags, docTagSearch } = require("../sqlQuery/attachment");
 const { handleOTPSend } = require("../../util/OTP/otpSend");
-const { execSelectQuery, execUpdateQery, execInsertQuery } = require("../../util/queryFunction");
+const { execSelectQuery, execUpdateQery } = require("../../util/queryFunction");
 const { getDocument } = require("../util/getModelDetail");
 const { default: Axios, default: axios } = require("axios");
 const { sendOtpAccessInfoToOwner } = require("../security-level/3");
@@ -93,9 +90,17 @@ const { consoleLog } = require("../../util");
 const { queryAttachmentMakerChecker, queryPendingApprovalAttachments } = require("../sqlQuery/documentMakerChecker");
 const isSuperAdmin = require("../sqlQuery/isSuperAdmin");
 const { edit_delete_document, validateUserIsInSameDomain } = require("../middleware/edit_delete_document");
+const { rmSync } = require("fs");
+const jwt = require("jsonwebtoken");
+const writeToFile = require("../../util/writeToFile");
+const { duplicateChecker } = require("../util/checkDuplicateDoc");
+const RoleUtils = require("../util/roleUtils");
+const { Console } = require("console");
 
-function auditDocument(documentId, userId, accessType, type, message) {
-  DocumentAudit.create({
+const moment = require("moment"); // Make sure you have moment installed: npm install moment
+
+async function auditDocument(documentId, userId, accessType, type, message) {
+  await DocumentAudit.create({
     documentId: documentId,
     dateTime: Date.now(),
     accessType: accessType,
@@ -121,82 +126,63 @@ async function sendToUser(docId) {
     attributes: ["email", "name"],
   });
   const [owner, editor] = await Promise.all([getUserOwner, getUserEditor]);
-  sendMessage(documentUpdateTemplate(owner, editor ? editor : {}, doc));
+  // await sendMessage(documentUpdateTemplate(owner, editor ? editor : {}, doc));
 }
 
-router.post("/document", [validator(Docs), auth.required], auth.required, async (req, res, next) => {
-  const errors = validationResult(req);
+router.post("/document", [validator(Docs)], auth.required, async (req, res, next) => {
   let log_query;
+  const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(422).json({ errors: errors });
   }
-
   req.body.isDeleted = false;
   req.body.ownerId = req.payload.id;
   req.body.createdBy = req.payload.id;
-  req.body.editedBy = req.payload.id;
+  req.body.editedBy = req.payload.id == 1;
   req.body.returnedByChecker = false;
   req.body.hierarchy = req.body.hierarchy || req.payload?.hierarchy || null;
-  req.body.branchId = req.payload?.branchId || null;
-  req.body.departmentId = req.body.departmentId || req.payload?.departmentId || null;
-  req.body.notification = req.body.notification || null; // Set a default if needed
-  req.body.notificationUnit = req.body.notificationUnit || null;
-
-  if (req.body.disposalDate) {
-    const date2 = new Date(req.body.disposalDate); // Incoming date (likely from the frontend)
-    const date3 = new NepaliDate(date2); // Convert the incoming date to Nepali date
-    const bsDate = date3.getBS(); // Get Nepali date
-
-    // Adjust month for Nepali calendar (Nepali months are 1-indexed)
-    bsDate.month = bsDate.month + 1;
-
-    const { year, month, date } = bsDate;
-
-    // Create the new Nepali formatted date (without converting to ISO)
-    // const formattedDate = `${year}-${month}-${date}`;
-    const formattedDate = `${year}-${String(month).padStart(2, "0")}-${String(date).padStart(2, "0")}`;
-
-    // Create a moment object from formatted Nepali date, setting current time
-    const currentDate = moment(); // Get current time in local time zone
-    const dateWithTime = moment.utc(formattedDate).set({
-      hour: currentDate.hour(),
-      minute: currentDate.minute(),
-      second: currentDate.second(),
-      millisecond: currentDate.millisecond(),
-    });
-
-    // Convert the date to Kathmandu time zone (Asia/Kathmandu)
-    const kathmanduTime = dateWithTime.tz("Asia/Kathmandu").format("YYYY-MM-DD HH:mm:ss");
-
-    // Assign the formatted Kathmandu date to the body
-    req.body.disposalDateNP = kathmanduTime;
+  if (req.payload?.branchId === 1) {
+    req.body.branchId = req.body.branchId || null;
+  } else {
+    req.body.branchId = req.payload?.branchId || null;
   }
-
+  req.body.departmentId = req.body.departmentId ? req.body.departmentId : req.payload.departmentId;
+  const otherTitle = req.body?.otherTitle;
+  req.body.name =
+    req.body?.name || (typeof otherTitle == "string" && otherTitle.length > 14) ? otherTitle.substring(0, 14) : otherTitle;
   // Security hierarchy removed for rbb so manually added for future use
   // if (onlyForThisVendor(banks.rbb.name)) req.body.securityLevel = 2;
 
   const indexValues = req.body.document_index_values || [];
+
   const documentTags = req.body.tags || [];
   if (req.body.checker) {
     req.body.isApproved = false;
   } else {
-    req.body.isApproved = false;
-  }
-  const role = await Role.findOne({
-    attributes: ["name"],
-    where: {
-      id: req.payload.roleId,
-    },
-  });
-  if (role[0]?.name === "System") {
     req.body.isApproved = true;
   }
-  Document.create(req.body, {
+  req.body.hasEncryption = true;
+  const checkDuplicateDoc = await Document.findOne({
+    where: {
+      name: req.body.name,
+      isDeleted: false,
+    },
+  });
+
+  console.log(checkDuplicateDoc, "this is duplicate doc");
+  if (checkDuplicateDoc) {
+    return res.json({
+      success: false,
+      message: "Duplicate Document",
+    });
+  }
+  await Document.create(req.body, {
     logging: (sql) => (log_query = sql),
     raw: true,
   })
     .then(async (doc) => {
-      indexValues.map((item) => {
+      const filtered_values = indexValues.filter((item) => typeof item.documentIndexId !== "number");
+      filtered_values.map((item) => {
         DocumentIndexValue.create({ ...item, documentId: doc.id }).catch((err) => {
           console.log("Index Error", err);
         });
@@ -204,7 +190,115 @@ router.post("/document", [validator(Docs), auth.required], auth.required, async 
       if (!doc.isApproved) addChecker(doc);
 
       // creating the new a new document tags
-      Promise.all(
+      await Promise.all(
+        documentTags.map(async (tag) => {
+          await Tag.create({
+            ...tag,
+            docId: doc.id,
+            value: tag,
+            departmentId: req.payload.departmentId,
+            branchId: req.payload.branchId,
+            createdBy: req.payload.id,
+            label: "tag",
+          });
+        })
+      );
+
+      switch (doc.securityLevel) {
+        case 3:
+          addUserAccess(doc.id, req.body.userAccess, async (err) => {
+            if (err) console.log("Error", err);
+            await createLog(req, constantLogType.DOCUMENT, doc.id, log_query);
+            res.json({
+              success: true,
+              message: "Document successfully created!",
+              id: doc.id,
+            });
+          });
+          break;
+        default:
+          await createLog(req, constantLogType.DOCUMENT, doc.id, log_query);
+          res.json({
+            success: true,
+            message: req.body.isApproved ? "Document successfully created!" : "Document Approval pending",
+            id: doc.id,
+          });
+          break;
+      }
+    })
+    .catch((err) => {
+      console.log(err);
+      res.json({ success: false, message: "Document not created!" });
+    });
+});
+
+//create new document by CIF
+router.post("/document-cifNumber", [validator(DocsCIF)], auth.required, async (req, res, next) => {
+  let log_query;
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ errors: errors });
+  }
+  req.body.isDeleted = false;
+  req.body.ownerId = req.payload.id;
+  req.body.createdBy = req.payload.id;
+  req.body.editedBy = req.payload.id == 1;
+  req.body.returnedByChecker = false;
+  req.body.hierarchy = req.body.hierarchy || req.payload?.hierarchy || null;
+  if (req.payload?.branchId === 1) {
+    req.body.branchId = req.body.branchId || null;
+  } else {
+    req.body.branchId = req.payload?.branchId || null;
+  }
+  req.body.departmentId = req.body.departmentId ? req.body.departmentId : req.payload.departmentId;
+
+  const getIdentifier = (tag) => {
+    return tag + "-" + moment().format("YYYY-MM-DD") + "-" + Date.now();
+  };
+
+  req.body.identifier = getIdentifier("DOC");
+
+  req.body.otherTitle = (req.body["2"] || req.body["8"]) + req.body.cifName;
+  //req.body.name =
+  // req.body?.name  || (typeof otherTitle == "string" && otherTitle.length > 14) ? otherTitle.substring(0, 14) : otherTitle;
+
+  // Security hierarchy removed for rbb so manually added for future use
+  // if (onlyForThisVendor(banks.rbb.name)) req.body.securityLevel = 2;
+
+  const indexValues = req.body.document_index_values || [];
+
+  const documentTags = req.body.tags || [];
+  req.body.isApproved = true;
+
+  const checkDuplicateDoc = await Document.findOne({
+    where: {
+      otherTitle: req.body.otherTitle,
+      isDeleted: false,
+    },
+  });
+
+  if (checkDuplicateDoc) {
+    return res.json({
+      success: false,
+      message: "Duplicate Document",
+    });
+  }
+
+  await Document.create(req.body, {
+    logging: (sql) => (log_query = sql),
+    raw: true,
+  })
+    .then(async (doc) => {
+      const filtered_values = indexValues.filter((item) => typeof item.documentIndexId !== "number");
+      filtered_values.map((item) => {
+        DocumentIndexValue.create({ ...item, documentId: doc.id }).catch((err) => {
+          console.log("Index Error", err);
+        });
+      });
+      if (!doc.isApproved) addChecker(doc);
+
+      // creating the new a new document tags
+      await Promise.all(
         documentTags.map(async (tag) => {
           await Tag.create({
             ...tag,
@@ -252,85 +346,58 @@ router.get("/bpm-doc-preview", async (req, res) => {
   res.send({ success: true, data: { attachments: [result] } });
 });
 
+const cache = {};
+const CACHE_TTL = 300000;
+
+const getFromCache = (key) => {
+  const cached = cache[key];
+  if (!cached) return null;
+  const isExpired = Date.now() - cached.timestamp > CACHE_TTL;
+  if (isExpired) {
+    delete cache[key];
+    return null;
+  }
+  return cached.data;
+};
+
+const setInCache = (key, data) => {
+  cache[key] = {
+    data,
+    timestamp: Date.now(),
+  };
+};
 router.get("/document/pagination", auth.required, async (req, res, next) => {
-  req.query.userId = req.payload.id;
-  let paginationDocument = await execSelectQuery(paginateQuery(req.query, false, req.payload));
-  paginationDocument = paginationDocument?.filter((doc) => doc.isApproved === true);
+  try {
+    const userId = req.payload.id;
+    req.query.userId = userId;
+    console.log(req.query, "here");
 
-  // ADDITION: Route-level search filtering (tags + text)
-  const searchData = req.query.searchingParameters ? JSON.parse(req.query.searchingParameters) : {};
+    const cacheKey = JSON.stringify(req.query);
+    const cachedData = getFromCache(cacheKey);
 
-  // Tag filtering
-  if (searchData.tags && Array.isArray(searchData.tags) && searchData.tags.length > 0) {
-    for (let doc of paginationDocument) {
-      // Assuming you have a Tag model defined
-      const documentTags = await Tag.findAll({
-        attributes: ["value"],
-        where: {
-          docId: doc.id,
-          label: "tag",
-        },
-        raw: true, // if you want plain objects instead of model instances
+    if (cachedData) {
+      return res.send({
+        paginationDocument: cachedData.paginationDocument,
+        total: cachedData.total,
+        success: true,
       });
-      doc.tags = documentTags.map((t) => t.value);
     }
-    paginationDocument = paginationDocument.filter(
-      (doc) =>
-        doc.tags &&
-        doc.tags.some((docTag) =>
-          searchData.tags.some((searchTag) => docTag.toLowerCase().includes(searchTag.toLowerCase()))
-        )
-    );
-  }
 
-  // Text search filtering
-  if (searchData.simpleText) {
-    const searchTerm = searchData.simpleText.toLowerCase();
-    paginationDocument = paginationDocument.filter(
-      (doc) =>
-        doc.DocumentType?.toLowerCase().includes(searchTerm) ||
-        doc.DocumentName?.toLowerCase().includes(searchTerm) ||
-        doc.Department?.toLowerCase().includes(searchTerm) ||
-        doc.Branch?.toLowerCase().includes(searchTerm) ||
-        doc.OrganizationName?.toLowerCase().includes(searchTerm) ||
-        doc.username?.toLowerCase().includes(searchTerm) ||
-        false
-    );
-  }
-  if (req.payload.branchId && req.payload.roleId !== 1) {
-    // Assuming you have a Branch model defined
-    const userBranch = await Branch.findAll({
-      attributes: ["name"],
-      where: {
-        id: req.payload.branchId,
-      },
-      raw: true, // This returns plain objects instead of model instances
-    });
-    if (userBranch.length > 0) {
-      const branchName = userBranch[0].name;
-      paginationDocument = paginationDocument.filter((doc) => doc.Branch === branchName);
-    } else {
-      paginationDocument = [];
-    }
-  } else {
-    // For department-level users, filter branch documents based on allowed branches.
-    // Fetch allowed branch names for the user's department.
-    const allowedBranches = await getAssociatedBranches(req.payload.departmentId);
-    const allowedBranchNames = allowedBranches.map((b) => b.name);
-    // Filter the documents: if a document has a non-null Branch, ensure it is in the allowed list.
-    paginationDocument = paginationDocument.filter((doc) => {
-      // If Branch is null, assume it's a department-level document.
-      if (doc.Branch === null || doc.Branch === undefined) return true;
-      return allowedBranchNames.includes(doc.Branch);
-    });
-  }
+    const paginationDocument = await execSelectQuery(paginateQuery(req.query, false, req.payload));
+    const totalDocument = await execSelectQuery(paginateQuery(req.query, true, req.payload));
 
-  const totalDocument = await execSelectQuery(paginateQuery(req.query, true, req.payload));
-  res.send({
-    paginationDocument,
-    total: totalDocument[0]?.total,
-    success: true,
-  });
+    const response = {
+      paginationDocument,
+      total: totalDocument[0]?.total,
+      success: true,
+    };
+
+    setInCache(cacheKey, response);
+
+    res.send(response);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get("/document", auth.required, async (req, res, next) => {
@@ -349,8 +416,6 @@ router.get("/document", auth.required, async (req, res, next) => {
     identifier,
     page,
     size,
-    notification,
-    notificationUnit,
   } = req.query;
   let { simpleText } = req.query;
   const departments = await getSearchTree(Department, departmentId, "departmentId");
@@ -541,15 +606,80 @@ router.get("/document", auth.required, async (req, res, next) => {
     });
 });
 
-router.get("/document/restore/:id", auth.required, async (req, res, next) => {
-  const id = req.params.id;
-  console.log("id", id);
-  const document = await Document.findOne({ where: { id: id } });
+//get by accountNumber
+router.get("/document-accountNumber", async (req, res, next) => {
+  const { accountNumber } = req.query; // Using query parameter
+  // Validate account number
+  if (!accountNumber || accountNumber.length !== 14) {
+    return res.json({ success: false, message: "Invalid Account Number. Must be of 14 Digits" });
+  }
 
-  if (document) {
-    document.isDeleted = false;
-    document.save();
-    res.json({ success: true, message: "Document successfully restored!" });
+  try {
+    // Query to fetch documents and related attachments
+    const documents = await execSelectQuery(
+      `
+      SELECT
+        doc.id AS documentId,
+        doc.name AS documentName,
+        doc.description AS documentDescription,
+        att.id AS attachmentId,
+        att.name AS attachmentFileName,
+        att.filePath AS attachmentFilePath
+      FROM
+        documents doc
+      INNER JOIN
+        attachments att
+      ON
+        doc.id = att.itemId
+      WHERE
+        doc.name = '${accountNumber}'  -- Using single quotes for the account number
+      AND
+        att.isDeleted = 0
+      `
+    );
+    // Check if any documents were found
+    if (documents.length === 0) {
+      return res.json({ success: false, message: "No document found for the provided account number" });
+    }
+
+    // Group the results by documentId and create a response structure with multiple attachments per document
+    const result = [];
+    let currentDocument = null;
+
+    documents.forEach((doc) => {
+      if (currentDocument && currentDocument.documentId === doc.documentId) {
+        // Add attachment to the existing document
+        currentDocument.attachmentInfo.push({
+          attachmentId: doc.attachmentId,
+          attachmentFileName: doc.attachmentFileName,
+          attachmentFilePath: doc.attachmentFilePath,
+        });
+      } else {
+        // New document, add to result array
+        if (currentDocument) result.push(currentDocument);
+
+        currentDocument = {
+          documentId: doc.documentId,
+          documentName: doc.documentName,
+          documentDescription: doc.documentDescription || null, // Handling null descriptions
+          attachmentInfo: [
+            {
+              attachmentId: doc.attachmentId,
+              attachmentFileName: doc.attachmentFileName,
+              attachmentFilePath: doc.attachmentFilePath,
+            },
+          ],
+        };
+      }
+    });
+
+    // Push the last document
+    if (currentDocument) result.push(currentDocument);
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error(error);
+    res.json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -570,117 +700,38 @@ router.get("/document/pending", auth.required, async (req, res, next) => {
   }
 });
 
-router.get("/document/notification", auth.required, async (req, res) => {
+router.get("/document/notification", auth.required, async (req, res, next) => {
   const userId = req.payload.id;
+  const selectQuery = "select notification.* ";
+  const countquery = "select count(*) as total";
+  const orderQuery = " ORDER BY notification.createdBy";
+  const query = `
+  from
+  (
+  select distinct d.* from documents d
+  join approval_masters am on am.documentId = d.id
+  join approval_queues aq on aq.approvalMasterId = am.id
+  where d.isApproved = 0 and isDeleted=0 and isArchived = 0  and aq.isApprover = 1 and
+  (d.returnedByChecker is null or d.returnedByChecker = 0) and sendToChecker=1 and aq.userId=${userId}
 
-  // Subquery to calculate isExpiring and isExpired for reuse
-  const subqueryForNotifications = `
-    SELECT 
-      d.*, 
-      am.initiatorId,
-      am.assignedTo,
-      am.approverId,
-      CASE 
-        WHEN d.disposalDate IS NULL THEN 0
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) BETWEEN 0 AND 1)
-          )
-        THEN 1 ELSE 0
-      END AS isExpiring,
-      CASE 
-        WHEN d.disposalDate IS NULL THEN 0
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) <= 0)
-          )
-        THEN 1 ELSE 0
-      END AS isExpired,
-      CASE 
-        WHEN d.disposalDate IS NULL THEN CONCAT('Document notification unit: ', d.notificationUnit)
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) BETWEEN 0 AND 2) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) BETWEEN 0 AND 1)
-          )
-        THEN CONCAT('Document is expiring soon (Expiry date: ', FORMAT(d.disposalDate, 'yyyy-MM-dd HH:mm:ss'), ')')
-        WHEN 
-          (
-            (d.notificationUnit = 'hr' AND DATEDIFF(HOUR, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'day' AND DATEDIFF(DAY, GETDATE(), d.disposalDate) <= 0) OR
-            (d.notificationUnit = 'week' AND DATEDIFF(WEEK, GETDATE(), d.disposalDate) <= 0)
-          )
-        THEN 'Document expired'
-        ELSE CONCAT('Document will expire in ', d.notificationUnit, ' (', FORMAT(d.disposalDate, 'yyyy-MM-dd HH:mm:ss'), ')')
-      END AS expiryMessage
-    FROM documents d
-    JOIN approval_masters am ON am.documentId = d.id
-    WHERE d.isDeleted = 0 AND d.isArchived = 0
-  `;
+  UNION
+  select distinct d.* from documents d
+  join approval_masters am on am.documentId = d.id
+  join approval_queues aq on aq.approvalMasterId = am.id
+  where d.isApproved = 0 and isDeleted = 0 and isArchived = 0 and d.returnedByChecker = 1 and am.initiatorId = ${userId}
 
-  // Main query to handle notifications
-  const mainQuery = `
-    SELECT * 
-    FROM (${subqueryForNotifications}) AS notifications
-    WHERE 
-      (notifications.isExpiring = 1 OR notifications.isExpired = 1) OR
-      (
-        notifications.isApproved = 0 AND
-        notifications.isDeleted = 0 AND
-        notifications.isArchived = 0 AND
-        (
-          ((notifications.returnedByChecker  = 1 OR notifications.returnedByApprover = 1) AND notifications.initiatorId = ${userId}) OR
-          (notifications.sendToApprover = 1 AND notifications.approverId = ${userId}) OR
-          
-          (
-          (notifications.returnedByApprover = 1 AND notifications.assignedTo = ${userId}) AND
-          NOT (notifications.returnedByChecker = 1) 
-           ) OR
-          ( 
-          (notifications.sendToChecker = 1 AND notifications.assignedTo = ${userId}) AND
-           NOT (notifications.sendToApprover = 1) 
-          )
-        )
-      )
-    ORDER BY notifications.createdAt DESC
-  `;
+  UNION
+  select distinct d.* from approval_masters am
+	join documents d on d.id=am.documentId
+	WHERE
+  ( am.assignedTo = ${userId} or am.initiatorId =${userId})
+  and isDeleted = 0 and type='attachment' and isActive =1)  notification
 
-  // Count query for total notifications
-  const countQuery = `
-    SELECT COUNT(*) AS total
-    FROM (${subqueryForNotifications}) AS notifications
-    WHERE
-      (notifications.isExpiring = 1 OR notifications.isExpired = 1) OR
-      (
-        notifications.isApproved = 0 AND
-        notifications.isDeleted = 0 AND
-        notifications.isArchived = 0 AND
-        (
-          (notifications.returnedByApprover = 1 AND notifications.initiatorId = ${userId}) OR
-          (notifications.sendToApprover = 1 AND notifications.approverId = ${userId}) OR
-          (
-          (notifications.returnedByApprover = 1 AND notifications.assignedTo = ${userId}) AND
-          NOT (notifications.returnedByChecker = 1) 
-           ) OR
-
-          
-         ( 
-          (notifications.sendToChecker = 1 AND notifications.assignedTo = ${userId}) AND
-           NOT (notifications.sendToApprover = 1) 
-          )
-        )
-      )  
   `;
 
   try {
-    const paginationDocument = await execSelectQuery(mainQuery);
-    const totalDocument = await execSelectQuery(countQuery);
-
+    const paginationDocument = await execSelectQuery(selectQuery + query + orderQuery);
+    const totalDocument = await execSelectQuery(countquery + query);
     res.send({
       paginationDocument,
       total: totalDocument[0]?.total,
@@ -688,31 +739,18 @@ router.get("/document/notification", auth.required, async (req, res) => {
       success: true,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send({ message: "An error occurred while fetching notifications.", error: err });
+    console.log(err);
+    res.send({ message: err });
   }
 });
-
 router.get("/document/pending-pagination", auth.required, async (req, res, next) => {
+  console.log(req.payload);
+
   req.query.userId = req.payload.id;
-
+  // console.log(getPendingDocument(req.query, (count = false), req.payload));
   try {
-    // Check if the user has Department Admin access (roleTypeId = 22)
-    const roleQuery = `
-  SELECT rc.roleTypeId
-  FROM users u
-  INNER JOIN role_controls rc ON u.roleId = rc.roleId
-  WHERE u.id = ${req.query.userId} AND rc.roleTypeId = 22 AND rc.value = 'true'
-`;
-
-    let [roleResult] = await execSelectQuery(roleQuery);
-    const hasRoleTypeId = roleResult?.roleTypeId ? true : false; // True if user is Department Admin
-
-    // Fetch pending documents
-    const paginationDocument = await execSelectQuery(
-      getPendingDocument(req.query, (count = false), req.payload, hasRoleTypeId)
-    );
-    const totalDocument = await execSelectQuery(getPendingDocument(req.query, (count = true), req.payload, hasRoleTypeId));
+    const paginationDocument = await execSelectQuery(getPendingDocument(req.query, (count = false), req.payload));
+    const totalDocument = await execSelectQuery(getPendingDocument(req.query, (count = true), req.payload));
 
     res.send({
       paginationDocument,
@@ -722,7 +760,7 @@ router.get("/document/pending-pagination", auth.required, async (req, res, next)
     });
   } catch (err) {
     console.log(err);
-    res.status(500).send({ message: err.message });
+    res.send({ message: err });
   }
 });
 
@@ -730,22 +768,8 @@ router.get("/document/rejected-pagination", auth.required, async (req, res, next
   req.query.userId = req.payload.id;
 
   try {
-    // Check if the user has Department Admin access (roleTypeId = 22)
-    const roleQuery = `
-      SELECT rc.roleTypeId
-      FROM users u
-      INNER JOIN role_controls rc ON u.roleId = rc.roleId
-      WHERE u.id = ${req.query.userId} AND rc.roleTypeId = 22 AND rc.value = 'true'
-    `;
-
-    let [roleResult] = await execSelectQuery(roleQuery);
-    const hasRoleTypeId = roleResult?.roleTypeId ? true : false; // True if user is Department Admin
-
-    // Fetch rejected documents
-    const paginationDocument = await execSelectQuery(
-      getRejectedDocument(req.query, (count = false), req.payload, hasRoleTypeId)
-    );
-    const totalDocument = await execSelectQuery(getRejectedDocument(req.query, (count = true), req.payload, hasRoleTypeId));
+    const paginationDocument = await execSelectQuery(getRejectedDocument(req.query, (count = false), req.payload));
+    const totalDocument = await execSelectQuery(getRejectedDocument(req.query, (count = true), req.payload));
 
     res.send({
       paginationDocument,
@@ -755,17 +779,23 @@ router.get("/document/rejected-pagination", auth.required, async (req, res, next
     });
   } catch (err) {
     console.log(err);
-    res.status(500).send({ message: err.message });
+    res.send({ message: err });
   }
 });
 
 router.get("/document/saved-pagination", auth.required, async (req, res, next) => {
+  let reqPayload = {
+    id: 1,
+    email: "admin@gentech.com",
+    roleId: 1,
+    hierarchy: "Super-001",
+    branchId: 1,
+  };
   req.query.userId = req.payload.id;
 
   try {
     const paginationDocument = await execSelectQuery(getSavedDocument(req.query, (count = false), req.payload));
     const totalDocument = await execSelectQuery(getSavedDocument(req.query, (count = true), req.payload));
-
     res.send({
       paginationDocument,
       total: totalDocument[0]?.total,
@@ -852,12 +882,12 @@ router.get("/document/preview", auth.required, async (req, res, next) => {
 
     const data = [doc];
     if (data) {
-      const images = _?.filter(data[0].attachments, (a) => a.fileType.includes("image"));
+      const images = _.filter(data[0].attachments, (a) => a.fileType.includes("image"));
       const isWatermark = await Watermark.findOne({
         where: { isActive: true },
       });
-      await downloadAttachments(images, isWatermark, { email: req.payload.email });
-      auditDocument(id, req.payload.id, DocumentAuditModel.OPEN);
+      await downloadAttachments(images, isWatermark);
+      await auditDocument(id, req.payload.id, DocumentAuditModel.OPEN);
       res.send({ success: true, data: data[0] });
     } else {
       res.status(500).send();
@@ -912,12 +942,12 @@ router.get("/document/special-preview", async (req, res) => {
     }
     const data = [doc];
     if (data) {
-      const images = _?.filter(data[0].attachments, (a) => a.fileType.includes("image"));
+      const images = _.filter(data[0].attachments, (a) => a.fileType.includes("image"));
       const isWatermark = await Watermark.findOne({
         where: { isActive: true },
       });
-      await downloadAttachments(images, isWatermark, { email: req.payload.email });
-      auditDocument(id, 0, DocumentAuditModel.OPEN);
+      await downloadAttachments(images, isWatermark);
+      await auditDocument(id, 0, DocumentAuditModel.OPEN);
       res.json({ success: true, data: data[0] });
     } else {
       res.status(500).json({ success: false, message: "Error!" });
@@ -933,12 +963,12 @@ router.get("/document/special-preview", async (req, res) => {
  * unused
  * generate link for hourly access
  */
-router.post("/document/hourly-access", auth.required, (req, res, next) => {
+router.post("/document/hourly-access", auth.required, async (req, res, next) => {
   const { attachmentId, documentId, durationInMillis, selectedUsers, previewUrl } = req.body;
   const { selectedEmails, otherUrl, type } = req.body;
   const token = crypto.randomBytes(32).toString("hex");
   const validTill = Date.now() + durationInMillis;
-  Promise.all(
+  await Promise.all(
     // for internal users
     selectedUsers
       ? selectedUsers.length > 0
@@ -966,8 +996,8 @@ router.post("/document/hourly-access", auth.required, (req, res, next) => {
 
     // for email users
     selectedEmails.join("").length > 0
-      ? selectedEmails.map((email) => {
-          return Promise.all([
+      ? selectedEmails.map(async (email) => {
+          return await Promise.all([
             HourlyAccess.create({
               userEmail: email,
               documentId,
@@ -1015,25 +1045,11 @@ router.post("/document/hourly-access-multiple", auth.required, async (req, res, 
     attachmentId, //array
     documentId,
     durationInMillis,
-    redactedAttachment,
-    redact,
   } = req.body;
 
-  // let newAttachments = [];
-  // newAttachments.push(redactedAttachment);
-  // const attachments = newAttachments;
+  const attachments = attachmentId;
+  console.log(attachments, typeof attachments);
 
-  let attachments;
-  if (redact) {
-    attachments = [redactedAttachment];
-  } else if (!redact) {
-    attachments = attachmentId;
-  }
-  const redactedAttachmentArray = attachments.map((ele) => ele.value);
-  const redactedAttachmentId = redactedAttachmentArray.toString();
-  console.log(redactedAttachmentId, "this is the id");
-
-  // const attachments = attachmentId;
   if (!attachments || (typeof attachments == "object" && attachments.length == 0)) {
     return res.send({ success: false, message: "No attachment selected" });
   }
@@ -1053,11 +1069,10 @@ router.post("/document/hourly-access-multiple", auth.required, async (req, res, 
     }
     const data = await Promise.all(
       selectedEmails.map(async (value) => {
-        console.log(value, "this is value");
         hourlyAccess_data = await HourlyAccess.create({
           userId: value?.userId,
           userEmail: value?.userEmail,
-          attachmentId: redact ? redactedAttachmentId : "",
+          attachmentId: "",
           documentId,
           validTill,
           token: token,
@@ -1072,7 +1087,6 @@ router.post("/document/hourly-access-multiple", auth.required, async (req, res, 
           type: type,
           attachmentId,
         });
-        console.log(attachmentId, "this is attachmentId");
         return hourlyAccess_data;
       })
     );
@@ -1090,44 +1104,32 @@ router.post("/document/hourly-access-multiple", auth.required, async (req, res, 
 
 async function validateUserApprove(req, res, next) {
   // validate user to approve
-  const approval_master = await ApprovalMaster.findAll({ where: { documentId: req.body.id, isActive: 1 } });
-  if (approval_master.length > 1) return res.send({ message: "Error: Please Contact Administrator", success: false });
+  const approval_master = await ApprovalMaster.findAll({
+    where: {
+      documentId: req.body.id,
+      isActive: 1,
+    },
+  });
 
-  if (approval_master[0].dataValues.documentId != req.body.id)
+  // if (approval_master.length > 1) return res.send({ message: "Error: Please Contact Administrator", success: false });
+  if (approval_master[0].assignedTo != req.payload.id)
     return res.send({ message: "you have no right to approve the document", success: false });
 
   next();
 }
 
-router.post("/document/approve", auth.required, validateUserApprove, async (req, res, next) => {
-  try {
-    const { id, userInput } = req.body;
-
-    if (!userInput || !id) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+router.post("/document/approve", auth.required, validateUserApprove, (req, res, next) => {
+  approveDocument(req.payload.id, req.body.id, (message) => {
+    if (message.success) {
+      auditDocument(req.body.id, req.payload.id, DocumentAuditModel.Approve, message.type);
     }
-    //updated for verifyBy
-    if (userInput) {
-      await Document.update(
-        { verifyBy: userInput }, // values to update
-        { where: { id } } // condition
-      );
-    }
-
-    approveDocument(req.payload.id, req.body.id, (message) => {
-      if (message.success) {
-        auditDocument(req.body.id, req.payload.id, DocumentAuditModel.Approve, message.type);
-      }
-      res.json(message || "failed");
-    });
-  } catch (error) {
-    console.log(error.message);
-  }
+    res.json(message || "failed");
+  });
 });
 
 // reject document
 router.post("/document/archive", auth.required, (req, res, next) => {
-  archiveDocument(req.payload.id, req.body.id, req.body.rejectReason, async (message) => {
+  archiveDocument(req.payload.id, req.body.id, req.body.rejectReason, (message) => {
     if (message.success) {
       auditDocument(req.body.id, req.payload.id, DocumentAuditModel.Decline, req.body.rejectReason);
     }
@@ -1170,16 +1172,14 @@ router.post("/document/send-to-checker", auth.required, async (req, res, next) =
     });
 
   await execUpdateQery(
-    `update documents set sendToChecker=1, returnedByApprover=0 ${
-      message ? `, description='${message}'` : ""
-    }  where id =  ${id}`
+    `update documents set sendToChecker=1 ${message ? `, description='${message}'` : ""}  where id =  ${id}`
   );
 
   const approval_master = await execSelectQuery(
     `select * from approval_masters am where documentId =${id} and type='document'`
   );
 
-  await sendEmailMakerCheckerInit(document.ownerId, approval_master[0]?.assignedTo, id);
+  // await sendEmailMakerCheckerInit(document.ownerId, approval_master[0]?.assignedTo, id);
 
   await createLog(
     req,
@@ -1192,284 +1192,6 @@ router.post("/document/send-to-checker", auth.required, async (req, res, next) =
     success: true,
     message: "Successfully Sent to Checker",
   });
-});
-
-router.post("/document/send-to-approver", auth.required, async (req, res, next) => {
-  const { id, message, checkerName, approverId } = req.body; // Add approverId from request
-  try {
-    // Check if the document exists and has been sent to the checker
-    Document.hasMany(Attachment, { foreignKey: "itemId", sourceKey: "id" });
-    const document = await Document.findOne({
-      where: { id, sendToChecker: 1 },
-      include: {
-        model: Attachment,
-        attributes: ["name", "attachmentDescription"],
-        where: { isDeleted: false },
-        required: false,
-      },
-    });
-
-    if (!document) {
-      return res.status(404).json({
-        success: false,
-        message: "Document not found or has not been sent by the checker.",
-      });
-    }
-
-    // Check if there are attachments before sending to the approver
-    if (document.attachments.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Please add an attachment before sending to the approver.",
-      });
-    }
-
-    // Update document status to mark it as sent to the approver
-    // Replace all three execUpdateQery calls with this single ORM update
-    const updateData = {
-      sendToApprover: 1,
-      returnedByApprover: 0,
-      checkedAt: new Date(),
-    };
-
-    if (message) updateData.commentByChecker = message;
-    if (checkerName) updateData.checkedBy = checkerName;
-
-    await Document.update(updateData, {
-      where: { id: id },
-    });
-
-    // Retrieve or update the approval master for this document
-    // Use findAll since you're expecting an array result
-    const approvalMasters = await ApprovalMaster.findAll({
-      attributes: ["id", "assignedTo"],
-      where: {
-        documentId: id,
-        type: "document",
-      },
-    });
-
-    // Then use array destructuring like your original code
-    const [approvalMaster] = approvalMasters;
-
-    if (approvalMaster) {
-      // Update the approver assignment in approval_masters
-      await ApprovalMaster.update(
-        {
-          approverId: approverId,
-        },
-        {
-          where: {
-            id: approvalMaster.id,
-          },
-        }
-      );
-    } else {
-      // Insert a new approval master if not already present - FIXED
-      await ApprovalMaster.create({
-        documentId: id,
-        type: "document",
-        assignedTo: approverId,
-        approvalId: approverId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    }
-
-    // Insert a new entry in `approval_queues` for the approver - FIXED
-    await ApprovalQueue.create({
-      approvalMasterId: approvalMaster.id,
-      isActive: 1,
-      level: 2,
-      userId: approverId,
-      isApprover: 1,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    // Log the action
-    await createLog(req, constantLogType.DOCUMENT, id, `Document sent to approver by checker`);
-    await sendEmailMakerCheckerInit(document.ownerId, approverId, id);
-
-    return res.json({
-      success: true,
-      message: "Document successfully sent to approver",
-    });
-  } catch (error) {
-    console.error("Error in sending document to approver:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An error occurred while processing the request.",
-    });
-  }
-});
-
-router.get("/document/attachment-versioning-by-id", async (req, res) => {
-  try {
-    let { documentId, name } = req.query;
-
-    // Validate documentId
-    documentId = parseInt(documentId, 10);
-    if (isNaN(documentId)) {
-      return res.status(400).json({ success: false, message: "Invalid documentId" });
-    }
-
-    if (!name) {
-      return res.status(400).json({ success: false, message: "Name is required" });
-    }
-
-    const attachments = await Attachment.findAll({
-      where: { itemId: documentId, name, isDeleted: 1 },
-      order: [["updatedAt", "DESC"]],
-    });
-
-    if (!attachments.length) {
-      return res.status(404).json({ success: false, message: "No attachments found" });
-    }
-
-    res.json({ success: true, data: attachments });
-  } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
-  }
-});
-
-router.post(
-  "/document/send-attachment-to-checker-or-approver",
-  auth.required,
-
-  async (req, res, next) => {
-    const { id, message, userId, sendToApprover } = req.body;
-
-    if (sendToApprover) {
-      // Code to send attachment to approver
-      const document = await Document.findOne({
-        where: { id, sendToChecker: 1 }, // Ensure it was already sent to checker
-        include: {
-          model: Attachment,
-          attributes: ["name", "attachmentDescription"],
-          where: { isDeleted: false },
-          required: false,
-        },
-      });
-
-      if (!document) {
-        return res.json({
-          success: false,
-          message: "Document not found or has not been sent by the checker.",
-        });
-      }
-
-      // Ensure attachments are present before sending to approver
-      if (document.attachments.length === 0) {
-        return res.json({
-          success: false,
-          message: "Please add attachment before sending to approver",
-        });
-      }
-
-      // Update document status to reflect sending to approver
-      await execUpdateQery(
-        `UPDATE documents SET sendToApprover=1 ${message ? `, description='${message}'` : ""} WHERE id = ${id}`
-      );
-
-      // Insert a new entry in `approval_queues` for the approver
-      await execInsertQuery(`
-        INSERT INTO approval_queues (approvalMasterId, isActive, level, userId, isApprover, createdAt, updatedAt)
-        VALUES (
-          (SELECT id FROM approval_masters WHERE documentId = ${id} AND type = 'document'),
-          1, 2, ${userId}, 1, GETDATE(), GETDATE()
-        );
-      `);
-
-      // Update `approval_masters` to reflect that it's with the approver
-      await execUpdateQery(`
-        UPDATE approval_masters
-        SET currentLevel = 2, assignedTo = ${userId}
-        WHERE documentId = ${id} AND type = 'document';
-      `);
-
-      // Log the action
-      await createLog(req, constantLogType.DOCUMENT, id, `Document sent to approver by checker with ID ${userId}`);
-
-      res.json({
-        success: true,
-        message: "Document successfully sent to approver",
-      });
-    } else {
-      // Code to send attachment to checker (existing code)
-      const attachmentMakerChecker = await queryAttachmentMakerChecker(id);
-      const pendingApprovalAttachments = await queryPendingApprovalAttachments(id);
-
-      if (attachmentMakerChecker.length > 0) {
-        return res.send({ success: false, message: "Already sent to checker." });
-      }
-
-      if (pendingApprovalAttachments.length <= 0) {
-        return res.send({ success: false, message: "No Attachment Uploaded." });
-      }
-
-      let doc = await getDocument(id);
-
-      doc.checker = [{ userId, isApprover: true }];
-      doc.userId = userId;
-
-      addChecker(doc, true);
-
-      await execUpdateQery(
-        `UPDATE documents SET sendToChecker=1 ${message ? `, description='${message}'` : ""} WHERE id = ${id}`
-      );
-
-      createLog(req, constantLogType.DOCUMENT, req.body.id, `Document sent to checker with ID ${userId}`);
-
-      res.json({
-        success: true,
-        message: "Document sent to Checker",
-      });
-    }
-  }
-);
-
-router.get("/document/users/approvers", auth.required, async (req, res) => {
-  const { branchId } = req.query; // branchCode comes from frontend query parameter
-
-  if (!branchId) {
-    return res.status(400).json({ success: false, message: "branchCode is required" });
-  }
-
-  try {
-    const approvers = await execSelectQuery(`
-      SELECT
-        users.id,
-        users.username,
-        users.email,
-        users.name,
-        users.phoneNumber,
-        users.roleId,
-        users.branchId,
-        users.isActive,
-        users.isDeleted,
-        role_types.name AS roleName
-      FROM users
-      JOIN role_controls ON users.roleId = role_controls.roleId
-      JOIN role_types ON role_controls.roleTypeId = role_types.id
-      WHERE role_types.id = 21  -- Ensure only 'Approver' role_type is selected
-        AND (users.branchId = '${branchId}' OR users.departmentId = '${branchId}')  -- Match by branchId
-        AND users.isDeleted = 0
-        AND users.isActive = 1
-    `);
-    if (approvers.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No approvers found for the specified branch.",
-      });
-    }
-
-    res.json({ success: true, approvers });
-  } catch (error) {
-    console.error("Error fetching approvers:", error);
-    res.status(500).json({ success: false, message: "An error occurred while fetching approvers" });
-  }
 });
 
 router.post(
@@ -1487,7 +1209,6 @@ router.post(
 
     if (attachmentMakerChecker.length > 0) return res.send({ success: false, message: "Already send to checker." });
 
-    console.log(pendingApprovalAttachments.length, "coutn");
     if (pendingApprovalAttachments.length <= 0) return res.send({ success: false, message: "No Attachment Uploaded." });
 
     let doc = await getDocument(id);
@@ -1524,22 +1245,18 @@ router.post("/document/checkout", auth.required, async (req, res, next) => {
   const isCheckedOut = await DocumentCheckout.findOne({
     where: { isReturned: false, documentId: req.body.documentId },
   });
-
   if (isCheckedOut) {
     if (req.body.isReturned) {
-      await Document.update({ statusId: req.body.statusId }, { where: { id: req.body.documentId } });
-
-      await DocumentCheckout.update({ isReturned: true, statusId: req.body.statusId }, { where: { id: isCheckedOut.id } });
+      await DocumentCheckout.update({ isReturned: true }, { where: { id: isCheckedOut.id } });
       auditDocument(req.body.documentId, req.payload.id, DocumentAuditModel.CheckIn);
       res.send({ success: true, message: "Successful!" });
     } else {
       res.send({ success: false, message: "Document already checked out!" });
     }
   } else {
-    await DocumentCheckout.create(req.body)
-      .then(async (_) => {
-        await Document.update({ statusId: req.body.statusId }, { where: { id: req.body.documentId } });
-        await auditDocument(req.body.documentId, req.payload.id, DocumentAuditModel.CheckOut);
+    DocumentCheckout.create(req.body)
+      .then((_) => {
+        auditDocument(req.body.documentId, req.payload.id, DocumentAuditModel.CheckOut);
 
         res.send({ success: true, message: "Successful!" });
       })
@@ -1552,170 +1269,143 @@ router.post("/document/checkout", auth.required, async (req, res, next) => {
 
 router.get("/document/:id", auth.required, async (req, res, next) => {
   const { id } = req.params;
-  Document.hasMany(Attachment, { foreignKey: "itemId", sourceKey: "id" });
-  Document.hasMany(DocumentAudit);
-  Document.hasMany(DocumentAccessUser);
-  Document.hasMany(DocumentCheckout);
-  Document.hasMany(HourlyAccess);
-  Document.hasMany(DocumentIndexValue);
-  Document.hasMany(DocumentIndexValue);
-  Document.hasMany(Favourite);
-  Document.belongsToMany(DocumentTypeIndex, { through: DocumentIndexValue });
 
-  const doc = await Document.findOne({
-    where: { id },
-    include: [
-      {
-        model: DocumentAudit,
-        limit: 15,
-        required: false,
-      },
-      {
-        model: DocumentAccessUser,
-        required: false,
-      },
-      {
-        model: DocumentCheckout,
-        required: false,
-      },
-      {
-        model: Attachment,
-        where: { isDeleted: false, redaction: false, itemType: "document" },
-        required: false,
-      },
-      {
-        model: HourlyAccess,
-        where: {
-          validTill: {
-            [Op.gt]: Date.now(),
-          },
+  try {
+    // Associations
+    Document.hasMany(Attachment, { foreignKey: "itemId", sourceKey: "id" });
+    Document.hasMany(DocumentAudit);
+    Document.hasMany(DocumentAccessUser);
+    Document.hasMany(DocumentCheckout);
+    Document.hasMany(HourlyAccess);
+    Document.hasMany(DocumentIndexValue);
+    Document.hasMany(Favourite);
+    Document.belongsToMany(DocumentTypeIndex, { through: DocumentIndexValue });
+
+    // Find the document with associated data
+    const doc = await Document.findOne({
+      where: { id },
+      include: [
+        {
+          model: DocumentAudit,
+          limit: 15,
+          required: false,
         },
-        required: false,
-      },
-      {
-        model: DocumentIndexValue,
-        required: false,
-      },
-      {
-        model: DocumentTypeIndex,
-        required: false,
-      },
-
-      {
-        model: Favourite,
-        required: false,
-      },
-    ],
-  });
-
-  if (doc.isDeleted && !isSuperAdmin(req.payload)) {
-    return res.json({ success: false, message: "You cannot access this document!" });
-  }
-
-  const approvedLog = await execSelectQuery(`
-    SELECT da.*, u.email  from document_audits da
-    join users u on u.id  =da.accessedBy
-    where accessType ='Approve' and documentId =${id}`);
-
-  // list attachment of this document
-  let documentAttachments = await execSelectQuery(documentAttachment(id, req.payload));
-
-  // TODO: add associated attachment to document
-  // const associatedAttachment = await execSelectQuery(
-  //   associatedAttachmentQuery(id)
-  // );
-
-  // user is maker or checker in approval cycle
-  const makerOrChecker = await execSelectQuery(
-    "select * from approval_masters am where am.isActive=1 and am.documentId=" + id
-  );
-
-  const userIsChecker = req.payload.id == makerOrChecker[0]?.assignedTo;
-  const userIsMaker = req.payload.id == makerOrChecker[0]?.initiatorId;
-  const userIsApprover = req.payload.id == makerOrChecker[0]?.approverId;
-
-  if (doc.sendToChecker && userIsMaker) {
-    return res.json({ success: false, message: "Document has been Send to checker. You cannot access this document!" });
-  }
-
-  const attachmentFilter = userIsChecker || userIsMaker || userIsApprover || isSuperAdmin(req.payload);
-
-  // filter attachments for pending approval
-  if (typeof documentAttachments == "object" && !attachmentFilter) {
-    documentAttachments = documentAttachments?.filter((row) => !row.pendingApproval || row.createdBy == req.payload.id);
-  }
-
-  // list associated id's
-  const associatedIds = await execSelectQuery(associatedBokIdFromTags(id, "docId"));
-
-  // Send attachment to checker
-  const attachmentMakerChecker = await queryAttachmentMakerChecker(id);
-  const pendingApprovalAttachments = await queryPendingApprovalAttachments(id);
-
-  // searching go document tags
-  var docTags = await execSelectQuery(docTagSearch(id, "docId"));
-
-  docTags = docTags.map((tag) => tag.value);
-  const data = await canViewTheDocument(req.payload.id, [doc]);
-  if (data[0]) {
-    const images = _?.filter(data[0].attachments, (a) => a.fileType.includes("image") && !a.isCompressed);
-    const isWatermark = await Watermark.findOne({
-      where: { isActive: true },
+        {
+          model: DocumentAccessUser,
+          required: false,
+        },
+        {
+          model: DocumentCheckout,
+          required: false,
+        },
+        {
+          model: Attachment,
+          where: { isDeleted: false, redaction: false, itemType: "document" },
+          required: false,
+        },
+        {
+          model: HourlyAccess,
+          where: {
+            validTill: {
+              [Op.gt]: Date.now(),
+            },
+          },
+          required: false,
+        },
+        {
+          model: DocumentIndexValue,
+          required: false,
+        },
+        {
+          model: DocumentTypeIndex,
+          required: false,
+        },
+        {
+          model: Favourite,
+          required: false,
+        },
+      ],
     });
 
-    // Download images when opening document in DMS, also for watermark
-    await downloadAttachments(images, isWatermark, { email: req.payload.email });
-
-    auditDocument(id, req.payload.id, DocumentAuditModel.OPEN);
-
-    // this is the part for sending OTP code
-    if (doc?.hasOtp) {
-      const owner = await User.findOne({ where: { id: data[0].ownerId } });
-      handleOTPSend(req);
-      sendOtpAccessInfoToOwner(owner.email, req.payload.email, data);
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "Document not found" });
     }
 
-    // structure array for attchment show in table
-    async function structureAttachment(attachments) {
-      console.log(attachments);
-      const districts = await District.findAll({ raw: true });
-      var showInAttachment = [];
-      var associatedBokIdsVar = [];
-      // separeate or add index values in attachment.
-      attachments.map((attach) => {
-        if (attach?.isShownInAttachment)
-          showInAttachment.push({
-            id: attach.id,
-            indexValueId: attach.indexValueId,
-            label: attach.label,
-            value:
-              attach?.dataType == "district"
-                ? districts.find((row) => row.id == attach.value)?.name || attach.value
-                : attach.value,
+    if (doc.isDeleted && !isSuperAdmin(req.payload)) {
+      return res.json({ success: false, message: "You cannot access this document!" });
+    }
 
-            dataType: attach?.dataType,
-          });
+    const approvedLog = await execSelectQuery(`
+      SELECT da.*, u.email FROM document_audits da
+      JOIN users u ON u.id = da.accessedBy
+      WHERE accessType = 'Approve' AND documentId = ${id}`);
+
+    let documentAttachments = await execSelectQuery(documentAttachment(id, req.payload));
+
+    const makerOrChecker = await execSelectQuery(`
+      SELECT * FROM approval_masters am
+      WHERE am.isActive = 1 AND am.documentId = ${id}`);
+
+    const userIsChecker = req.payload.id === makerOrChecker[0]?.assignedTo;
+    const userIsMaker = req.payload.id === makerOrChecker[0]?.initiatorId;
+
+    if (doc.sendToChecker && userIsMaker) {
+      return res.json({ success: false, message: "Document has been sent to checker. You cannot access this document!" });
+    }
+
+    const attachmentFilter = userIsChecker || userIsMaker || isSuperAdmin(req.payload);
+
+    if (typeof documentAttachments === "object" && !attachmentFilter) {
+      documentAttachments = documentAttachments.filter((row) => !row.pendingApproval || row.createdBy === req.payload.id);
+    }
+
+    const attachmentMakerChecker = await queryAttachmentMakerChecker(id);
+    const pendingApprovalAttachments = await queryPendingApprovalAttachments(id);
+
+    var docTags = [];
+
+    docTags = docTags.map((tag) => tag.value);
+    const data = await canViewTheDocument(req.payload.id, [doc]);
+
+    if (data[0]) {
+      await auditDocument(id, req.payload.id, DocumentAuditModel.OPEN);
+
+      function structureAttachment(attachments) {
+        var showInAttachment = [];
+        var associatedBokIdsVar = [];
+
+        attachments.map((attach) => {
+          if (attach?.isShownInAttachment)
+            showInAttachment.push({
+              id: attach.id,
+              indexValueId: attach.indexValueId,
+              label: attach.label,
+              value: attach.value,
+              dataType: attach?.dataType,
+            });
+        });
+
+        const result = _.uniqBy(attachments, "id");
+
+        return { data: result, showInAttachment };
+      }
+
+      res.json({
+        success: true,
+        approvedLog,
+        makerOrChecker: makerOrChecker[0],
+        options_maker: { attachmentMakerChecker, pendingApprovalAttachments },
+        data: data[0],
+        associatedIds: [],
+        docTags: [],
+        attachments: structureAttachment(documentAttachments),
       });
-      const result = _.uniqBy(attachments, "id");
-      associatedBokIdsVar = _.uniqBy(associatedBokIdsVar, "value");
-
-      // add index data to array.
-      return { data: result, showInAttachment };
+    } else {
+      res.json({ success: false, message: "You cannot access this document!" });
     }
-
-    res.json({
-      success: true,
-      approvedLog,
-      makerOrChecker: makerOrChecker[0],
-      options_maker: { attachmentMakerChecker, pendingApprovalAttachments },
-      data: data[0],
-      associatedIds: associatedIds || [],
-      docTags: docTags || [],
-      // attachments: [...documentAttachments, ...associatedAttachment], // display at document view
-      attachments: await structureAttachment(documentAttachments), // display at document view
-    });
-  } else {
-    res.json({ success: false, message: "You cannot access this document!" });
+  } catch (error) {
+    console.error("Error fetching document:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1860,6 +1550,9 @@ router.delete("/document/:id", auth.required, async (req, res, next) => {
   if (message) return res.send({ success: false, message });
 
   let isMaker = false;
+  // for log
+  let log_query;
+
   // find checker or not
   const data = await getDocument(id);
   // for maker => user can delete their documents.
@@ -1868,6 +1561,8 @@ router.delete("/document/:id", auth.required, async (req, res, next) => {
       isMaker = true;
     }
   }
+  // To maintain log
+  const previousValue = await findPreviousData(constantLogType.DOCUMENT, id, req.method);
 
   deleteItem(
     Document,
@@ -1883,6 +1578,8 @@ router.delete("/document/:id", auth.required, async (req, res, next) => {
         await Attachment.update(
           { isDeleted: true },
           {
+            // for log
+            logging: (sql) => (log_query = sql),
             raw: true,
             where: { itemId: id },
           }
@@ -1894,6 +1591,9 @@ router.delete("/document/:id", auth.required, async (req, res, next) => {
         if (data.returnedByChecker) {
           await sendEmailDocumentDelete(req.payload.id, approval_master[0]?.assignedTo, id);
         }
+
+        // for log
+        createLog(req, constantLogType.DOCUMENT, id, log_query, previousValue);
       }
       res.send(response);
     },
@@ -1969,48 +1669,191 @@ router.get("/bok-cbs/pullBOKIDaFromCBS", async (req, res, next) => {
   res.send({ data: newData, success: true });
 });
 
-//Reporting Section
-const ReportingIframe = require("../models/reporting_iframe");
-const { exit } = require("process");
-const { log } = require("console");
-const getAssociatedBranches = require("../../util/getAssociatedBranches");
+//Everest Bank : Print QR Data (AccountHolderName and Account Number) in range
+router.get("/document-range", async (req, res, next) => {
+  const first = req.query.first;
+  const second = req.query.second;
 
-router.get("/get-reporting-iframe", async (req, res) => {
-  const reportingFrame = await execSelectQuery("select * from reporting_iframes");
-  if (!reportingFrame) {
-    return res.status(404).json({});
+  let data = [];
+  const allDocument = await execSelectQuery(
+    `SELECT * FROM documents d 
+    WHERE d.NAME BETWEEN  CAST('${first}' as varchar(14)) AND CAST('${second}' as varchar(14)) 
+    AND d.isDeleted =0 order by d.name asc;`
+  );
+  allDocument.forEach((arr) => {
+    data.push(arr.otherTitle.toString());
+  });
+
+  const accountNumbers = data.map((item) => item.match(/^\d+/)[0]);
+
+  const excelDumpData = await execSelectQuery(excelData(accountNumbers));
+
+  const separatedData = excelDumpData.map((entry, index) => {
+    const accountNumber = entry.DocumentName.substring(0, 14);
+    const accountName = entry.DocumentName.substring(14).trim();
+
+    return {
+      S_N: index + 1,
+      Account_Number: accountNumber,
+      Account_Name: accountName,
+      Remarks: "",
+    };
+  });
+
+  // console.log(data, "data");
+  let charCount = allDocument.toString().length;
+
+  // console.log(charCount, "count");
+
+  if (charCount < 1850) {
+    return res
+      .status(200)
+      .json({ accountInformation: [...new Set(data)], excelInformation: separatedData ? separatedData : [] });
   }
-  res.status(200).json({ reportingFrame });
+  return res.status(200).json({ accountInformation: [], success: false });
 });
 
-router.get("/metalink", async (req, res) => {
-  var METABASE_SITE_URL = "http://localhost:3000";
-  var METABASE_SECRET_KEY = "7eb7f2e69868bc71c877541712b629f953b0fbb3c4a674b83a006c7450be2f58";
+//can be turned in to module
+// const filterArray = (arr, first, second) => {
+//   //Output account numbers from otherTitle
+//   let resultant = arr.map((v) => {
+//     return v.substring(0, 14);
+//   });
 
-  var payload = {
-    resource: { dashboard: 7 },
-    params: {},
-  };
-  var token = jwt.sign(payload, METABASE_SECRET_KEY);
+//   //Checks if account nubmers are present in resultant array
+//   if (resultant.includes(first) && resultant.includes(second)) {
+//     let a = arr.filter((item) => (first <= item && item <= second) || (second <= item && item <= first));
+//     return a;
+//   }
+//   return console.log("No Data Found");
+// };
 
-  var iframeUrl = METABASE_SITE_URL + "/embed/dashboard/" + token + "#bordered=true&titled=true";
-  res.status(200).json({ iframeUrl });
+//Reporting Section
+
+// router.get("/get-reporting-iframe", auth.required, async (req, res) => {
+//   const reportingFrame = await execSelectQuery("select * from reporting_iframes");
+//   if (!reportingFrame) {
+//     return res.status(404).json({});
+//   }
+//   res.status(200).json({ reportingFrame });
+// });
+
+const METABASE_SITE_URL = "https://dms.ebl.com.np:8443";
+const METABASE_SECRET_KEY = "357a9ecaa1c73ccd29c29b8110da66a5ee29d9099143253fb9a2c4ec4b80d217";
+
+router.get("/get-reporting-iframe", auth.required, async (req, res) => {
+  try {
+    // Expiration time: 1 minute (60 seconds) from now
+    const expirationTime = Math.floor(Date.now() / 1000) + 300;
+
+    const payload = {
+      resource: { dashboard: 164 },
+      params: {},
+      exp: expirationTime, // Adding expiration claim
+    };
+
+    const payload1 = {
+      resource: { dashboard: 165 },
+      params: {},
+      exp: expirationTime, // Adding expiration claim
+    };
+
+    // Signing JWT tokens with expiration
+    const token = jwt.sign(payload, METABASE_SECRET_KEY, { algorithm: "HS256" });
+    const token1 = jwt.sign(payload1, METABASE_SECRET_KEY, { algorithm: "HS256" });
+
+    // Sample response structure
+    const reportingFrame = [
+      {
+        id: 1,
+        isDeleted: "0",
+        url: `${METABASE_SITE_URL}/embed/dashboard/${token}#bordered=true&titled=true`,
+        name: "DOCUMENT DASHBOARD",
+        isTitled: 1,
+      },
+      {
+        id: 2,
+        isDeleted: "0",
+        url: `${METABASE_SITE_URL}/embed/dashboard/${token1}#bordered=true&titled=true`,
+        name: "LOGS DASHBOARD",
+        isTitled: 1,
+      },
+    ];
+
+    res.status(200).json({ reportingFrame });
+  } catch (error) {
+    console.error("Error generating Metabase token:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
 });
 
-router.get("/find-duplicate", async (req, res) => {
-  const result = {
-    acct: "01606017200025",
-    acctName: "DIBAKAR GAUTAM",
-    custId: "000447422",
-    branch: "POKHARA BRANCH",
-    schmCode: "ODSST",
-    idNum: Date.now(),
-  };
-  res.send({ data: result });
-});
+// router.get("/metalink", auth.required, async (req, res) => {
+//   var METABASE_SITE_URL = "https://dms.ebl.com.np:8443";
+//   var METABASE_SECRET_KEY = "357a9ecaa1c73ccd29c29b8110da66a5ee29d9099143253fb9a2c4ec4b80d217";
 
+//   var payload = {
+//     resource: { dashboard: 354 },
+//     params: {},
+//   };
+
+//   var payload1 = {
+//     resource: { dashboard: 322 },
+//     params: {},
+//   };
+
+//   var token = jwt.sign(payload, METABASE_SECRET_KEY);
+//   var token1 = jwt.sign(payload1, METABASE_SECRET_KEY);
+
+//   var iframeUrl = [
+//     METABASE_SITE_URL + "/embed/dashboard/" + token + "#bordered=true&titled=true",
+//     METABASE_SITE_URL + "/embed/dashboard/" + token1 + "#bordered=true&titled=true",
+//   ];
+
+//   res.status(200).json({ iframeUrl });
+// });
+
+router.get("/metalink", auth.required, async (req, res) => {
+  try {
+    // Expiration time: 1 minute (60 seconds) from now
+    const expirationTime = Math.floor(Date.now() / 1000) + 300;
+
+    const payload = {
+      resource: { dashboard: 354 },
+      params: {},
+      exp: expirationTime, // Adding expiration claim
+    };
+
+    const payload1 = {
+      resource: { dashboard: 322 },
+      params: {},
+      exp: expirationTime, // Adding expiration claim
+    };
+
+    // Signing JWT tokens with expiration
+    const token = jwt.sign(payload, METABASE_SECRET_KEY, { algorithm: "HS256" });
+    const token1 = jwt.sign(payload1, METABASE_SECRET_KEY, { algorithm: "HS256" });
+
+    // Construct secure iframe URLs
+    const iframeUrl = [
+      `${METABASE_SITE_URL}/embed/dashboard/${token}#bordered=true&titled=true`,
+      `${METABASE_SITE_URL}/embed/dashboard/${token1}#bordered=true&titled=true`,
+    ];
+
+    res.status(200).json({ iframeUrl });
+  } catch (error) {
+    console.error("Error generating Metabase token:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
 router.get("/indexing-everest", async (req, res) => {
-  const documents = await execSelectQuery("select * from documents d where name != '' and isDeleted =0");
+  const documents = await execSelectQuery(`
+  SELECT * from documents 
+WHERE id not in (
+SELECT DISTINCT div.documentId
+from document_index_values div
+group by div.documentId
+)
+and isDeleted=0 and isApproved=1 and isArchived=0`);
 
   const already_indexed = await execSelectQuery(`
     select DISTINCT d.name from documents d
@@ -2023,15 +1866,17 @@ router.get("/indexing-everest", async (req, res) => {
   for (const row of documents) {
     const revaulate = already_indexed.map((row) => row.name);
     if (revaulate.includes(row.name)) {
-      console.log("=============  Skip process   ==================");
+      // console.log("=============  Skip process   ==================");
       continue;
     }
 
-    console.count(row.id, row.name);
+    // console.count(row.id, row.name);
     console.log("=============  indexing process start  ==================");
     //hit api
     try {
-      const url = "http://localhost:8181/api/find-duplicate" || `https://check.ebl-zone.com/api/schm?acct=${row.name}`;
+      // http://10.1.13.22:8080/api/schm?acct=${acNo}
+      // https://check.ebl-zone.com/api/schm?acct=${accNo}
+      const url = `https://check.ebl-zone.com/api/schm?acct=${row.name}`;
       const response = await axios.get(url, {
         auth: {
           username: "docudigi",
@@ -2039,7 +1884,7 @@ router.get("/indexing-everest", async (req, res) => {
         },
       });
 
-      const result = response?.data?.data;
+      const result = response?.data;
       // console.log(result);
       // const result = {
       //   acct: "01606017200025",
@@ -2069,16 +1914,17 @@ router.get("/indexing-everest", async (req, res) => {
 
           if (api_result?.[key]) {
             //Insert into database
-            // await DocumentIndexValue.create({
-            //   documentIndexId: api_result?.[key],
-            //   value: typeof value == "object" ? JSON.stringify(item.value) : value,
-            //   documentId: row.id,
-            // })
-            //   .then()
-            //   .catch((err) => {
-            //     console.log("Index Error", err);
-            //     exit(1);
-            //   });
+            // console.log("inserted,:", value);
+            await DocumentIndexValue.create({
+              documentIndexId: api_result?.[key],
+              value: typeof value == "object" ? JSON.stringify(value) : value,
+              documentId: row.id,
+            })
+              .then()
+              .catch((err) => {
+                // console.log("Index Error", err);
+                exit(1);
+              });
           }
         }, Promise.resolve());
       };
@@ -2086,7 +1932,10 @@ router.get("/indexing-everest", async (req, res) => {
       await resolvePromisesSeq(data);
       console.log("=============  indexing process end  ==================");
     } catch (error) {
-      console.log(error);
+      // console.log(row.name);
+      writeToFile(row.name, "bulkupload_error.txt", true);
+      // console.log(error);
+
       continue;
     }
   }
@@ -2094,33 +1943,106 @@ router.get("/indexing-everest", async (req, res) => {
   res.status(200).json({ success: true });
 });
 
-module.exports = router;
+router.post("/all-branch-data", async (req, res) => {
+  try {
+    const apiUrl = "http://10.1.3.49:9999/all-branch-data" || process.env.SERVER_URL_BRANCH_DATA;
+    const requestData = {
+      functionName: "AOFCountSolWise",
+      requestData: {
+        fromDate: req.body.fromDate,
+        toDate: req.body.toDate,
+      },
+    };
+    const response = await axios.post(apiUrl, requestData);
+    const apiData = response.data.QueryResult;
 
-router.get("/license-checker", async (req, res) => {
-  const crypto = require("crypto");
+    const result = [];
 
-  const key = Buffer.from("AE62B9D3-C1AF-46FC-9A41-2A794778", "utf8");
-  const iv = Buffer.from("D9EAE402-AC9E-4D", "utf8");
+    for (const branchData of apiData) {
+      const { AOF_OPENED_IN_FINACLE, ACCT_NO_LIST, BRANCHNAME, BRANCHID } = branchData;
+      // Ignore branch code 0000
+      if (BRANCHID === "0000") {
+        continue;
+      }
+      const accountList = ACCT_NO_LIST.split(",").map((account) => account.trim());
 
-  function decryptLicense(encryptedDate) {
-    const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-    let decrypted = decipher.update(encryptedDate, "base64", "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
+      const branch = await Branch.findOne({ where: { branchCode: BRANCHID } });
+      if (!branch) {
+        throw new Error(`Branch with code ${BRANCHID} not found in the database`);
+      }
+
+      const documents = await Document.findAll({
+        where: {
+          name: { [Op.in]: accountList },
+          isDeleted: 0,
+          isApproved: 1,
+        },
+      });
+
+      const existingAccounts = documents.map((doc) => doc.name);
+      const AOF_OPENED_IN_SYSTEM = existingAccounts.length;
+
+      const nonExistingAccounts = accountList.filter((account) => !existingAccounts.includes(account));
+      const AOF_NOT_IN_DMS = nonExistingAccounts.join(", ");
+
+      result.push({
+        SN: result.length + 1,
+        BRANCH_NAME: BRANCHNAME,
+        AOF_OPENED_IN_FINACLE: AOF_OPENED_IN_FINACLE,
+        AOF_OPENED_IN_SYSTEM: AOF_OPENED_IN_SYSTEM,
+        // AOF_NOT_IN_DMS: AOF_NOT_IN_DMS,
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching and formatting data:", error);
+    res.status(500).json({ error: "Failed to fetch and format data" });
+  }
+});
+
+router.get("/document-account-number/:accountNumber", auth.required, async (req, res, next) => {
+  const { accountNumber } = req.params;
+
+  // Validate account number length and that it's numeric
+  if (!/^\d{14}$/.test(accountNumber)) {
+    res.json({ success: false, message: "Invalid Account Number. Must be 14 digits." });
+    return;
   }
 
-  const encryptedLicenseKey = process.env.LICENSE_KEY;
-  const decryptedLicenseDate = new Date(decryptLicense(encryptedLicenseKey));
-  const currentDateTime = new Date();
+  try {
+    // Parameterized query to prevent SQL injection
+    const document = await execSelectQuery(
+      `
+      SELECT
+        doc.otherTitle AS documentName,
+        doc.description AS documentDescription,
+        att.id AS attachmentId,
+        att.name AS attachmentFileName,
+        att.filePath AS attachmentFilePath
+      FROM
+        documents doc
+      INNER JOIN
+        attachments att
+      ON
+        doc.id = att.itemId
+      WHERE
+        doc.name = ?
+        AND att.isDeleted = 0
+        AND doc.isDeleted = 0
+      `,
+      [accountNumber]
+    );
 
-  const isLicenseValid = decryptedLicenseDate > currentDateTime;
+    if (document.length === 0) {
+      res.status(404).json({ success: false, message: "No document found for provided account number" });
+      return;
+    }
 
-  const formattedExpirationDate = decryptedLicenseDate.toISOString();
-
-  const response = {
-    isLicenseValid: isLicenseValid,
-    licenseExpirationDate: formattedExpirationDate,
-  };
-
-  res.json(response);
+    res.json({ success: true, data: document });
+  } catch (error) {
+    console.error(error); // Log error for debugging
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 });
+
+module.exports = router;

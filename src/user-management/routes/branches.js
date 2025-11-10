@@ -7,7 +7,6 @@ const Sequelize = require("sequelize");
 const { availableHierarchy } = require("../../util/hierarchyManage");
 const { execSelectQuery } = require("../../util/queryFunction");
 const { consoleLog } = require("../../util");
-const { respond } = require("../../util/response");
 
 /**
  * List all the **BRANCHES** that are available
@@ -34,7 +33,61 @@ router.get("/branches", auth.required, async (req, res, next) => {
   //   });
 });
 
-router.get("/branchesFilter", async (req, res) => {
+const firstNameRegex = /^[^\s]+/; // Regex to match the first word of the name
+
+router.get("/branches-locationMap", auth.required, async (req, res) => {
+  try {
+    const query = `
+      WITH RankedMatches AS (
+  SELECT
+    b.id AS branch_id,
+    b.name AS branch_name,
+    b.city,
+    b.country,
+    b.province,
+    b.branchCode,
+    b.phoneNumber,
+    b.street,
+    l.id AS location_id,
+    l.name AS location_name,
+    l.level,
+    l.parentId,
+    l.locationTypeId,
+    ROW_NUMBER() OVER (
+      PARTITION BY b.id
+      ORDER BY LEN(l.name) DESC
+    ) AS row_num
+    FROM branches b
+    JOIN location_maps l 
+    ON CHARINDEX(l.name, b.name) > 0
+    WHERE b.isDeleted = 0 AND l.isDeleted = 0)
+    SELECT *
+    FROM RankedMatches WHERE row_num = 1 ORDER BY branch_id;
+    `;
+
+    const result = await execSelectQuery(query);
+
+    if (!result || result.length === 0) {
+      return res.status(200).json({
+        success: false,
+        message: "No matching branches and locations found.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error fetching branches with location maps:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+});
+
+router.get("/branchesFilter", auth.required, async (req, res) => {
   const query = `select id, name  from branches where id not in (
 	select b.id from branches b
 	join security_hierarchies sh on 'Branch_' + CAST(b.id as varchar(30)) = sh.code
@@ -48,32 +101,13 @@ router.get("/branchesFilter", async (req, res) => {
 
 router.post("/branches", auth.required, (req, res, next) => {
   const branch = req.body;
-
-  // checkif branch code and branch name is already taken
-  Branch.findOne({
-    where: {
-      [Op.or]: [{ branchCode: branch.branchCode }, { name: branch.name }],
-      isDeleted: false,
-    },
-  })
-    .then((branchFound) => {
-      if (branchFound) {
-        return res.json({ success: false, message: "Branch Code or Branch Name already taken." });
-      } else {
-        Branch.create(branch)
-          .then((b) => {
-            BranchLogo.create({
-              branchId: b.id,
-              branchLogo: branch.branchLogo,
-            });
-            res.json({ success: true, message: "Successful!" });
-          })
-          .catch((err) => {
-            console.log(err);
-            res.status(500);
-            res.json({ success: false, message: "Server Error!" });
-          });
-      }
+  Branch.create(branch)
+    .then((b) => {
+      BranchLogo.create({
+        branchId: b.id,
+        branchLogo: branch.branchLogo,
+      });
+      res.json({ success: true, message: "Successful!" });
     })
     .catch((err) => {
       console.log(err);
@@ -84,22 +118,6 @@ router.post("/branches", auth.required, (req, res, next) => {
 
 router.put("/branches", auth.required, (req, res, next) => {
   const branch = req.body;
-
-  // checkif branch code and branch name is already taken
-  Branch.findOne({
-    where: {
-      [Op.or]: [{ branchCode: branch.branchCode }, { name: branch.name }],
-      isDeleted: false,
-      id: {
-        [Op.ne]: branch.id,
-      },
-    },
-  }).then((branchFound) => {
-    if (branchFound) {
-      return respond(res, "409", "Branch Code or Branch Name already taken.");
-    }
-  });
-
   Branch.update(branch, {
     where: { id: req.body.id, isDeleted: false },
   })
@@ -183,8 +201,7 @@ router.delete("/branches/:id", auth.required, (req, res, next) => {
     req.payload,
     (response) => {
       res.send(response);
-    },
-    req
+    }
   );
 });
 

@@ -26,7 +26,6 @@ module.exports = (sequelize, type) => {
     branchId: {
       type: type.INTEGER,
       defaultValue: null,
-      allowNull: true
     },
     parentId: {
       type: type.INTEGER,
@@ -34,9 +33,6 @@ module.exports = (sequelize, type) => {
     },
     departmentId: {
       type: type.INTEGER,
-    },
-    multipleHierarchy: {
-      type: type.BOOLEAN,
     },
     type: {
       type: type.STRING,

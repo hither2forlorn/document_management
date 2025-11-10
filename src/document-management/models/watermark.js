@@ -30,7 +30,7 @@ module.exports = (sequelize, type) => {
     },
     text: {
       type: type.STRING,
-      defaultValue: "RBB",
+      defaultValue: "Gentech",
     },
     image: {
       type: type.STRING,

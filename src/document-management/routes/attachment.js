@@ -1,16 +1,20 @@
 /**
  * @module AttachmentModule
  */
+
 const router = require("express").Router();
 const multer = require("multer");
 const moment = require("moment");
 const auth = require("../../config/auth");
 const logger = require("../../config/logger");
 const { Op } = require("sequelize");
-const crypto = require("crypto");
-
+const archiver = require("archiver");
+const fs = require("fs");
+const path = require("path");
 const { deleteItem, ATTACHMENT, deleteItemWithId } = require("../../config/delete");
 const { storage, checkFtp } = require("../../config/filesystem");
+const attachment = require("../models/attachment");
+const { indexOf, lastIndexOf, forEach } = require("lodash");
 const {
   Document,
   Attachment,
@@ -20,24 +24,16 @@ const {
   sequelize,
   HourlyAccess,
   MultipleHierarchies,
-  DocumentCheckout,
-  User,
-  Branch,
-  SecurityHierarchy,
-  ApprovalMaster,
 } = require("../../config/database");
 const { uploadAttachment } = require("../util/bulk_upload");
 const Sequelize = require("sequelize");
-const fs = require("fs");
 const {
+  uploadAttachments,
   downloadAttachmentFromFtp,
   uncompressAttachment,
   uploadAttachmentBPM,
-  downloadAttachments,
-  uploadAttachments,
+  downloadAttachmentFromFtpZip,
 } = require("../util/attachment");
-const _ = require("lodash");
-const compressing = require("compressing");
 const { onlyForThisVendor, banks } = require("../../config/selectVendor");
 const { paginateQuery } = require("../util/attachmentPaginate");
 const { convertDate } = require("../../util/converDate");
@@ -53,13 +49,8 @@ const { createLog, constantLogType } = require("../../util/logsManagement");
 const { execUpdateQery, execSelectQuery } = require("../../util/queryFunction");
 const { getId } = require("../util/url");
 const { edit_delete_document, validateUserIsInSameDomain } = require("../middleware/edit_delete_document");
-const ValidationError = require("../../errors/validation");
-const { canViewTheDocument } = require("../auth");
-const encryptArchieve = require("../util/encryptArchieve");
-const { isPdfBlank, areAnyPdfFilesBlank, checkAttachmentsForDuplicates } = require("../util/pdfUtils");
-const isPDFFile = require("../util/isPdf");
-const getAssociatedBranches = require("../../util/getAssociatedBranches");
-
+const { DOCUMENT_INDICES } = require("../util/constants");
+const { consoleLog } = require("../../util");
 async function checkCompressing(attachment) {
   if (attachment.isCompressed) {
     const fileInfo = await uncompressAttachment(attachment.filePath);
@@ -79,33 +70,11 @@ async function checkCompressing(attachment) {
 
 router.get("/attachment/pagination", auth.required, async (req, res, next) => {
   req.query.userId = req.payload.id;
+
   try {
-    let paginationDocument = await execSelectQuery(paginateQuery(req.query, false, req.payload));
-    if (!req.payload.hierarchy.includes("Super")) {
-      if (req.payload.branchId && req.payload.roleId !== 1) {
-        const userBranch = await Branch.findOne({
-          attributes: ["name"],
-          where: {
-            id: req.payload.branchId,
-          },
-        });
-        if (userBranch.length > 0) {
-          const branchName = userBranch[0].name;
-          paginationDocument = paginationDocument.filter((doc) => doc.branch === branchName);
-        } else {
-          paginationDocument = [];
-        }
-      } else {
-        const allowedBranches = await getAssociatedBranches(req.payload.departmentId);
-        const allowedBranchNames = allowedBranches.map((b) => b.name);
-        paginationDocument = paginationDocument?.filter((doc) => {
-          if (doc.branch === null || doc.branch === undefined) {
-            return doc.departmentId === req.payload.departmentId;
-          }
-          return allowedBranchNames.includes(doc.branch);
-        });
-      }
-    }
+    const paginationDocument = await sequelize.query(paginateQuery(req.query, false, req.payload), {
+      type: Sequelize.QueryTypes.SELECT,
+    });
     const totalDocument = await sequelize.query(paginateQuery(req.query, true, req.payload), {
       type: Sequelize.QueryTypes.SELECT,
     });
@@ -125,10 +94,10 @@ router.post("/attachment", auth.required, async (req, res, next) => {
 
   const upload = multer({ storage: storage }).array("file");
   upload(req, res, async function (err) {
-    const indexValues = JSON.parse(req.body.indexValues);
-    const associatedIDS = JSON.parse(req.body.associatedIds);
+    const indexValues = req.body.indexValues ? JSON.parse(req.body.indexValues) : [];
+    const associatedIDS = req.body.associatedIds ? JSON.parse(req.body.associatedIds) : [];
+
     if (err) {
-      console.log(err);
       logger.error(err);
       res.status(500).send({ success: false, message: err?.message || "Error" });
     } else {
@@ -144,12 +113,9 @@ router.post("/attachment", auth.required, async (req, res, next) => {
       const attachments = [];
       let exit = false;
 
-      const isCheckerProcess = await ApprovalMaster.findAll({
-  where: {
-    documentId: itemId
-  }
-});
-
+      const isCheckerProcess = await execSelectQuery(`
+      select * from approval_masters am
+      where documentId = ${itemId}`);
       // restrict invalid file types
       const invalidFileTypes = [
         "application/x-ms-dos-executable", //.exe file
@@ -159,124 +125,151 @@ router.post("/attachment", auth.required, async (req, res, next) => {
       ];
 
       files.forEach((file) => {
-        // Calculate MD5 hash
-        const hash = crypto.createHash("md5");
-        const fileBuffer = fs.readFileSync(file.path);
-        const fileHash = hash.update(fileBuffer).digest("hex");
-
         const fileSize = file.size / 1024;
         const maxFileSize = process.env.FILE_SIZE || 51200;
-
         const attachment = {
           name: file.originalname,
           attachmentDescription: attachmentDesc,
           fileType: file.mimetype,
           size: fileSize,
-          isEncrypted: doc.dataValues.hasEncryption || false,
-          redaction: JSON.parse(redaction) || false,
-          filePath: "/" + "Citizenship/" + itemType + "/" + itemId + "/" + file.originalname,
+          isEncrypted: onlyForThisVendor([banks.everest.name]) ? true :
+          doc.dataValues.hasEncryption || false,
+          // redaction: JSON.parse(redaction) || false,
+          filePath: "/" + itemType + "/" + itemId + "/" + Date.now() + "-" + file.originalname,
           localPath: file.path,
           itemId: itemId,
           ...(itemType ? { itemType } : {}),
           attachmentType: "normal-upload",
           isDeleted: false,
-          pendingApproval: doc.dataValues.isApproved || isCheckerProcess.length > 0 ? true : false,
+          pendingApproval:
+            req.body.isNewApprovedDocumentAttachment === "true"
+              ? true
+              : !doc.dataValues.isApproved && isCheckerProcess.length > 0
+              ? true
+              : false,
           documentTypeId,
           customerName,
           url,
           approvedDate: convertDate(approvedDate),
           createdBy,
           notes,
-          md5Hash: fileHash,
         };
+
+        if (doc.documentTypeId === 1 || doc.documentTypeId === 2) {
+          let docIdFromUser = parseInt(attachment.documentTypeId); // obtained from index selection
+          let docTypeFromUser = file.originalname.toString().substring(14).split(".")[0]; // obtained from attachment
+          let acutalDocType = DOCUMENT_INDICES.find((row) => row.id == docIdFromUser).key; // obtained by matching DOCUMENT_INDICES constants with index selected values
+          let accountNumber = file.originalname.toString().substring(0, 14);
+          let regexOnlyAlphabets = /^(?=.*[a-zA-Z])(?=.*[0-9])/;
+          let isValid = regexOnlyAlphabets.test(accountNumber);
+          if (isValid) {
+            exit = true;
+            res.status(412).send({ message: "ONLY 14 DIGITS STRING IS ALLOWED AS ACCOUNT NUMBER" });
+          }
+
+          let regex = /\d+/g;
+          let docTypeIntFromUser = docTypeFromUser.match(regex);
+
+          // Allow numbers from 0 to 100 in all document types
+          let numList = Array.from({ length: 101 }, (_, i) => i); // [0, 1, ..., 100]
+          let num = docTypeIntFromUser ? numList.find((row) => row == docTypeIntFromUser[0]) : null;
+
+          if (num !== undefined && docTypeFromUser.toString().includes(num)) {
+            exit = false;
+            acutalDocType = docTypeFromUser;
+          }
+
+          //allows numbers in document types
+          // let regex = /\d+/g;
+          // let docTypeIntFromUser = docTypeFromUser.match(regex);
+          // let num = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].find((row) => row == docTypeIntFromUser);
+          // if (docTypeFromUser.toString().includes(num)) {
+          //   exit = false;
+          //   acutalDocType = docTypeFromUser;
+          // }
+
+          //check docType like AOF, CIF with actualDocType,
+          //actualDocType is obtained by matching id that users choose from gui document type dropdown.
+          if (docTypeFromUser !== acutalDocType) {
+            exit = true;
+            res.status(412).send({ message: `INDEX MISMATCH ! MUST BE EXACT TO ${accountNumber}${acutalDocType}.PDF` });
+          }
+        }
+
         // File type validation
         if (invalidFileTypes.includes(attachment.fileType) && onlyForThisVendor(banks.citizen.name)) {
           exit = true;
-          return res.status(412).send({ message: "Invalid File Type", success: false });
+          return res.status(412).send({ success: false, message: "Invalid File Type", success: false });
         }
 
         // file size limitation
         if (fileSize >= maxFileSize && onlyForThisVendor(banks.citizen.name)) {
           exit = true;
           return res.status(412).send({
-            message: "File size exceed limit is " + maxFileSize + " MB",
+            message: "File size exced limit is " + maxFileSize + " MB",
             success: false,
           });
         }
-
-        return attachments.push({
-          ...attachment,
-          md5Hash: fileHash,
-        });
+        return attachments.push(attachment);
       });
 
       // exit  for validation
       if (exit) return;
-
-      const pdfAttachments = attachments?.filter((attachment) => attachment.fileType === "application/pdf");
-      const pdfFiles = files?.filter((file) => file.mimetype === "application/pdf");
-      const duplicatePDF = await checkAttachmentsForDuplicates(pdfAttachments, doc);
-
-      // check if any pdf file is blank
-      const anyBlankPdfFiles = await areAnyPdfFilesBlank(pdfFiles);
-
-      if (anyBlankPdfFiles) {
-        return res.status(412).send({
-          message: `One of the PDF file(s) is blank. Please upload a valid file.`,
-          success: false,
-        });
-      }
-
-      if (duplicatePDF) {
-        return res.status(412).send({
-          message: `Duplicate PDF Found. PDF with same hash value already exists!. Please upload a valid file.`,
-          success: false,
-        });
-      }
-
       uploadAttachments(attachments, res, req)
-        .then(async (attachmentIds) => {
-          if (!attachmentIds || attachmentIds.length === 0) {
-            return res.status(500).send({ message: "Error while uploading !! Rolling back " });
+        .then(async (success, failure) => {
+          if (failure || !success) {
+            return res.status(500).send("Error");
           } else {
-            const attachmentsWithIds = attachments.map((attachment, index) => ({
-              ...attachment,
-              id: attachmentIds[index], // Add the attachmentId from attachmentIds array
-            }));
-            attachmentIds.forEach((attachmentId) => {
-              Promise.all(
-                indexValues.map((item) => {
-                  DocumentIndexValue.create({
-                    ...item,
-                    documentId: itemId,
-                    value: typeof item.value === "object" ? JSON.stringify(item.value) : item.value,
-                    attachmentId: attachmentId,
-                  }).catch((err) => {
-                    console.log(err);
-                    throw new Error("Whoops! Index");
-                  });
-                })
-              );
+            if (typeof success == "object" && success?.length > 0) {
+              success.map((attachment) => {
+                const attachmentId = attachment?.dataValues?.id;
+                if (attachmentId) {
+                  // add indexes to attachment
+                  Promise.all(
+                    indexValues.map((item) => {
+                      console.log(item, JSON.parse(item.value), typeof item);
+                      DocumentIndexValue.create({
+                        ...item,
+                        documentId: itemId,
+                        value: typeof item.value == "object" ? JSON.stringify(item.value) : item.value,
+                        attachmentId: attachmentId,
+                      }).catch((err) => {
+                        console.log(err);
+                        throw new Error("Whoops! Index");
+                      });
+                    })
+                  );
 
-              // Create Tags
-              Promise.all(
-                associatedIDS.map(async (tag) => {
-                  Tag.create({
-                    ...tag,
-                    attachId: attachmentId,
-                    label: "tag",
-                    docId: itemId,
-                    documentTypeId,
-                  }).catch((err) => {
-                    console.log(err);
-                    throw new Error("Whoops! Tags");
-                  });
-                })
-              );
-            });
+                  // create Tags
+                  // Promise.all(
+                  //   associatedIDS.map(async (tag) => {
+                  //     Tag.create({
+                  //       ...tag,
+                  //       attachId: attachmentId,
+                  //       label: "tag",
+                  //       docId: itemId,
+                  //       documentTypeId,
+                  //     }).catch((err) => {
+                  //       console.log(err);
+                  //       throw new Error("Whoops! tags");
+                  //     });
+                  //   })
+                  // );
+                }
+              });
+            }
+            // res.send({
+            //   data: attachments,
+            //   success: true,
+            //   message: "Successfully uploaded",
+            // });
 
             res.send({
-              data: attachmentsWithIds,
+              data: success.map((successItem, index) => ({
+                attachmentId: successItem?.dataValues?.id,
+                ...attachments[index],
+              })),
+
               success: true,
               message: "Successfully uploaded",
             });
@@ -285,6 +278,391 @@ router.post("/attachment", auth.required, async (req, res, next) => {
         .catch((err) => {
           console.log(err);
           res.status(500).send({ message: "Error while uploading !! Rolling back " });
+          return;
+        });
+    }
+  });
+});
+
+router.post("/attachment-cifOld", auth.required, async (req, res, next) => {
+  const createdBy = req.payload.id;
+
+  const upload = multer({ storage: storage }).array("file");
+  upload(req, res, async function (err) {
+    const indexValues = req.body.indexValues ? JSON.parse(req.body.indexValues) : [];
+    const associatedIDS = req.body.associatedIds ? JSON.parse(req.body.associatedIds) : [];
+    if (err) {
+      console.log(err);
+      logger.error(err);
+      res.status(500).send({ success: false, message: err?.message || "Error" });
+    } else {
+      const files = req.files;
+      const { itemId, itemType, attachmentDesc, redaction, customerName, url, documentTypeId, approvedDate, notes } =
+        req.body;
+      const fileNames = files.map((file) => file.originalname);
+      const query = `
+        SELECT name FROM attachments
+        WHERE name IN (${fileNames.map((name) => `'${name}'`).join(",")})
+        AND itemId = ${itemId}
+        AND isDeleted = 0
+      `;
+
+      // Check if any of these file names already exist in the database
+      const existingAttachments = await execSelectQuery(query);
+      if (existingAttachments.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Attachments with names ${existingAttachments.map((att) => att.name).join(", ")} already exist.`,
+        });
+      }
+      let cifNumber = fileNames.toString().substring(0, 9);
+      let regexOnlyNumbers = /^\d{9}$/; // Ensures exactly 9 digits at the start
+
+      let isValid = regexOnlyNumbers.test(cifNumber);
+      if (!isValid) {
+        res.status(412).send({ message: "ONLY 9 DIGITS NUMBER IS ALLOWED AS CIF" });
+      }
+
+      // validate user is in same domain
+      const message = await validateUserIsInSameDomain(req.payload, itemId);
+      if (message) return res.send({ success: false, message });
+
+      const doc = await getDocument(itemId);
+      const attachments = [];
+      let exit = false;
+
+      const isCheckerProcess = await execSelectQuery(`
+      select * from approval_masters am
+      where documentId = ${itemId}`);
+      // restrict invalid file types
+      const invalidFileTypes = [
+        "application/x-ms-dos-executable", //.exe file
+        "application/x-msdownload",
+        "application/octet-stream", //.bat file
+        "application/zip", // zip files
+      ];
+
+      files.forEach((file) => {
+        const fileSize = file.size / 1024;
+        const maxFileSize = process.env.FILE_SIZE || 51200;
+        const attachment = {
+          name: file.originalname,
+          attachmentDescription: attachmentDesc,
+          fileType: file.mimetype,
+          size: fileSize,
+          isEncrypted: doc.dataValues.hasEncryption || false,
+          // redaction: JSON.parse(redaction) || false,
+          filePath: "/" + itemType + "/" + itemId + "/" + Date.now() + "-" + file.originalname,
+          localPath: file.path,
+          itemId: itemId,
+          ...(itemType ? { itemType } : {}),
+          attachmentType: "normal-upload",
+          isDeleted: false,
+          // pendingApproval: createdBy === 1 ? 0 : isCheckerProcess.length > 0 || doc.dataValues.isApproved ? true : false,
+          pendingApproval: false,
+          documentTypeId,
+          customerName,
+          url,
+          approvedDate: convertDate(approvedDate),
+          createdBy,
+          notes,
+        };
+
+        // File type validation
+        if (invalidFileTypes.includes(attachment.fileType) && onlyForThisVendor(banks.citizen.name)) {
+          exit = true;
+          return res.status(412).send({ success: false, message: "Invalid File Type", success: false });
+        }
+
+        // file size limitation
+        if (fileSize >= maxFileSize && onlyForThisVendor(banks.citizen.name)) {
+          exit = true;
+          return res.status(412).send({
+            message: "File size exced limit is " + maxFileSize + " MB",
+            success: false,
+          });
+        }
+        return attachments.push(attachment);
+      });
+
+      // exit  for validation
+      if (exit) return;
+      uploadAttachments(attachments, res, req)
+        .then(async (success, failure) => {
+          if (failure || !success) {
+            return res.status(500).send("Error");
+          } else {
+            if (typeof success == "object" && success?.length > 0) {
+              success.map((attachment) => {
+                const attachmentId = attachment?.dataValues?.id;
+                if (attachmentId) {
+                  // add indexes to attachment
+                  Promise.all(
+                    indexValues.map((item) => {
+                      console.log(item, JSON.parse(item.value), typeof item);
+                      DocumentIndexValue.create({
+                        ...item,
+                        documentId: itemId,
+                        value: typeof item.value == "object" ? JSON.stringify(item.value) : item.value,
+                        attachmentId: attachmentId,
+                      }).catch((err) => {
+                        console.log(err);
+                        throw new Error("Whoops! Index");
+                      });
+                    })
+                  );
+
+                  // create Tags
+                  // Promise.all(
+                  //   associatedIDS.map(async (tag) => {
+                  //     Tag.create({
+                  //       ...tag,
+                  //       attachId: attachmentId,
+                  //       label: "tag",
+                  //       docId: itemId,
+                  //       documentTypeId,
+                  //     }).catch((err) => {
+                  //       console.log(err);
+                  //       throw new Error("Whoops! tags");
+                  //     });
+                  //   })
+                  // );
+                }
+              });
+            }
+            // res.send({
+            //   data: attachments,
+            //   success: true,
+            //   message: "Successfully uploaded",
+            // });
+
+            res.send({
+              data: success.map((successItem, index) => ({
+                attachmentId: successItem?.dataValues?.id,
+                ...attachments[index],
+              })),
+
+              success: true,
+              message: "Successfully uploaded",
+            });
+          }
+        })
+        .catch((err) => {
+          console.log(err);
+          res.status(500).send({ message: "Error while uploading !! Rolling back " });
+          return;
+        });
+    }
+  });
+});
+
+router.post("/attachment-cif", auth.required, async (req, res, next) => {
+  const createdBy = req.payload.id;
+
+  const upload = multer({ storage: storage }).array("file");
+  upload(req, res, async function (err) {
+    const indexValues = req.body.indexValues ? JSON.parse(req.body.indexValues) : [];
+    const associatedIDS = req.body.associatedIds ? JSON.parse(req.body.associatedIds) : [];
+    if (err) {
+      console.log(err);
+      logger.error(err);
+      res.status(500).send({ success: false, message: err?.message || "Error" });
+    } else {
+      const files = req.files;
+      const { itemId, itemType, attachmentDesc, redaction, customerName, url, documentTypeId, approvedDate, notes } =
+        req.body;
+      const fileNames = files.map((file) => file.originalname);
+      const cifId = fileNames.map((fileName) => fileName.slice(0, 9));
+
+      const checkDocumentQuery = `
+             SELECT id FROM documents WHERE id = ${itemId} AND isDeleted = 0
+`;
+      const existingDocument = await execSelectQuery(checkDocumentQuery);
+
+      if (existingDocument.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No document found with the provided itemId.",
+        });
+      }
+
+      const checkCifQuery = `SELECT
+        div.id AS documentIndexValueId,
+        div.documentId,
+        div.documentIndexId,
+        div.value,
+        div.isDeleted AS documentIndexValueIsDeleted,
+        doc.name AS documentName,
+        doc.description AS documentDescription
+        FROM
+        document_index_values div
+      INNER JOIN
+        documents doc
+        ON div.documentId = doc.id
+      WHERE
+        div.value = '${cifId[0]}'
+        AND doc.isDeleted = 0
+      AND (div.documentIndexId = 2 OR div.documentIndexId = 8)`;
+
+      const document = await execSelectQuery(checkCifQuery);
+
+      if (document.length === 0)
+        return res.json({ success: false, message: "Unable to upload rename your file to correct CIF" });
+
+      if (document.some((doc) => doc.documentId != itemId))
+        return res.json({ success: false, message: "CIF must be of same documentId" });
+
+      const query = `
+        SELECT name FROM attachments
+        WHERE name IN (${fileNames.map((name) => `'${name}'`).join(",")})
+        AND itemId = ${itemId}
+        AND isDeleted = 0
+      `;
+
+      // Check if any of these file names already exist in the database
+      const existingAttachments = await execSelectQuery(query);
+      if (existingAttachments.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Attachments with names ${existingAttachments.map((att) => att.name).join(", ")} already exist.`,
+        });
+      }
+      let cifNumber = fileNames.toString().substring(0, 9);
+      let regexOnlyNumbers = /^\d{9}$/; // Ensures exactly 9 digits at the start
+
+      let isValid = regexOnlyNumbers.test(cifNumber);
+      if (!isValid) {
+        res.status(412).send({ message: "ONLY 9 DIGITS NUMBER IS ALLOWED AS CIF" });
+      }
+
+      // validate user is in same domain
+      const message = await validateUserIsInSameDomain(req.payload, itemId);
+      if (message) return res.send({ success: false, message });
+
+      const doc = await getDocument(itemId);
+      const attachments = [];
+      let exit = false;
+
+      const isCheckerProcess = await execSelectQuery(`
+      select * from approval_masters am
+      where documentId = ${itemId}`);
+      // restrict invalid file types
+      const invalidFileTypes = [
+        "application/x-ms-dos-executable", //.exe file
+        "application/x-msdownload",
+        "application/octet-stream", //.bat file
+        "application/zip", // zip files
+      ];
+
+      files.forEach((file) => {
+        const fileSize = file.size / 1024;
+        const maxFileSize = process.env.FILE_SIZE || 51200;
+        const attachment = {
+          name: file.originalname,
+          attachmentDescription: attachmentDesc,
+          fileType: file.mimetype,
+          size: fileSize,
+          isEncrypted: doc.dataValues.hasEncryption || false,
+          // redaction: JSON.parse(redaction) || false,
+          filePath: "/" + itemType + "/" + itemId + "/" + Date.now() + "-" + file.originalname,
+          localPath: file.path,
+          itemId: itemId,
+          ...(itemType ? { itemType } : {}),
+          attachmentType: "normal-upload",
+          isDeleted: false,
+          // pendingApproval: createdBy === 1 ? 0 : isCheckerProcess.length > 0 || doc.dataValues.isApproved ? true : false,
+          pendingApproval: false,
+          documentTypeId,
+          customerName,
+          url,
+          approvedDate: convertDate(approvedDate),
+          createdBy,
+          notes,
+        };
+
+        // File type validation
+        if (invalidFileTypes.includes(attachment.fileType) && onlyForThisVendor(banks.citizen.name)) {
+          exit = true;
+          return res.status(412).send({ success: false, message: "Invalid File Type", success: false });
+        }
+
+        // file size limitation
+        if (fileSize >= maxFileSize && onlyForThisVendor(banks.citizen.name)) {
+          exit = true;
+          return res.status(412).send({
+            message: "File size exced limit is " + maxFileSize + " MB",
+            success: false,
+          });
+        }
+        return attachments.push(attachment);
+      });
+
+      // exit  for validation
+      if (exit) return;
+      uploadAttachments(attachments, res, req)
+        .then(async (success, failure) => {
+          if (failure || !success) {
+            return res.status(500).send("Error");
+          } else {
+            if (typeof success == "object" && success?.length > 0) {
+              success.map((attachment) => {
+                const attachmentId = attachment?.dataValues?.id;
+                if (attachmentId) {
+                  // add indexes to attachment
+                  Promise.all(
+                    indexValues.map((item) => {
+                      console.log(item, JSON.parse(item.value), typeof item);
+                      DocumentIndexValue.create({
+                        ...item,
+                        documentId: itemId,
+                        value: typeof item.value == "object" ? JSON.stringify(item.value) : item.value,
+                        attachmentId: attachmentId,
+                      }).catch((err) => {
+                        console.log(err);
+                        throw new Error("Whoops! Index");
+                      });
+                    })
+                  );
+
+                  // create Tags
+                  // Promise.all(
+                  //   associatedIDS.map(async (tag) => {
+                  //     Tag.create({
+                  //       ...tag,
+                  //       attachId: attachmentId,
+                  //       label: "tag",
+                  //       docId: itemId,
+                  //       documentTypeId,
+                  //     }).catch((err) => {
+                  //       console.log(err);
+                  //       throw new Error("Whoops! tags");
+                  //     });
+                  //   })
+                  // );
+                }
+              });
+            }
+            // res.send({
+            //   data: attachments,
+            //   success: true,
+            //   message: "Successfully uploaded",
+            // });
+
+            res.send({
+              data: success.map((successItem, index) => ({
+                attachmentId: successItem?.dataValues?.id,
+                ...attachments[index],
+              })),
+
+              success: true,
+              message: "Successfully uploaded",
+            });
+          }
+        })
+        .catch((err) => {
+          console.log(err);
+          res.status(500).send({ message: "Error while uploading !! Rolling back " });
+          return;
         });
     }
   });
@@ -297,7 +675,7 @@ router.put("/attachment/:id", auth.required, async (req, res, next) => {
   upload(req, res, async function (err) {
     const { attachmentId, associatedIds, itemId, documentTypeId, notes } = req.body;
     var indexValues = JSON.parse(req.body.indexValues);
-    indexValues = indexValues?.filter((row) => row.documentIndexId);
+    indexValues = indexValues.filter((row) => row.documentIndexId);
 
     // update attachment notes
     await Attachment.update({ notes: notes }, { where: { id: attachmentId } });
@@ -354,6 +732,102 @@ router.put("/attachment/:id", auth.required, async (req, res, next) => {
     }
   });
   res.send({ message: "updated successfully", success: true });
+});
+
+router.get("/attachment/download-bulk/:id/:cw", auth.required, async (req, res, next) => {
+  console.log("route hit here");
+  const cw = req.params.cw;
+  // To maintain log
+  let log_query;
+  // Array to store file paths of downloaded attachments
+  const downloadedFilePaths = [];
+
+  try {
+    // Fetch all attachment IDs related to the specified item ID
+    const getAttachmentIds = await Attachment.findAll({
+      where: {
+        itemId: req.params.id,
+      },
+      raw: true,
+      attributes: ["id"],
+    });
+
+    // Check if any attachments are found
+    if (getAttachmentIds.length === 0) {
+      return res.json({ success: false, message: "No attachments found for the specified item ID" });
+    }
+
+    // Iterate over each attachment ID and download them
+    for (const attachment of getAttachmentIds) {
+      const attachmentId = attachment.id;
+      // Fetch attachment details
+      const attachmentDetails = await Attachment.findOne({
+        logging: (sql) => (log_query = sql),
+        where: { id: attachmentId },
+      });
+
+      // Perform necessary processing (e.g., check compressing, etc.)
+      const filePath = await checkCompressing(attachmentDetails);
+
+      // Download attachment from FTP
+      const isSuccessful = await downloadAttachmentFromFtpZip(
+        "temp" + filePath,
+        filePath,
+        attachmentId,
+        false,
+        req.payload,
+        cw
+      );
+
+      if (isSuccessful) {
+        // Log successful download
+        await createLog(req, constantLogType.ATTACHMENT, attachmentId, log_query);
+        // Store downloaded file path
+        downloadedFilePaths.push(filePath);
+      } else {
+        // Log download error
+        logger.error(`Error downloading attachment with ID ${attachmentId}`);
+      }
+    }
+
+    // Create a zip file
+    const zipFileName = "attachments.zip";
+    const zipFilePath = `./${zipFileName}`;
+    const output = fs.createWriteStream(zipFilePath);
+    const archive = archiver("zip", {
+      zlib: { level: 9 }, // Sets the compression level
+    });
+
+    output.on("close", () => {
+      console.log(archive.pointer() + " total bytes");
+      console.log("archiver has been finalized and the output file descriptor has closed.");
+      // Send the zip file as response
+      res.download(zipFilePath, zipFileName, (err) => {
+        // Clean up zip file after download
+        fs.unlinkSync(zipFilePath);
+      });
+    });
+
+    archive.on("error", (err) => {
+      throw err;
+    });
+
+    // Pipe archive data to the file
+    archive.pipe(output);
+
+    // Add downloaded files to the zip archive
+    for (const filePath of downloadedFilePaths) {
+      archive.file(filePath, { name: filePath });
+    }
+
+    // Finalize the archive
+    await archive.finalize();
+    res.json({ success: true });
+  } catch (err) {
+    // Handle errors
+    logger.error(err);
+    res.json({ success: false, message: "Error downloading attachments" });
+  }
 });
 
 // add document index
@@ -518,6 +992,14 @@ router.post("/attachment/bulk-upload", auth.required, (req, res, next) => {
   });
 });
 
+const logToFile = (message) => {
+  const logFilePath = path.join(__dirname, "body.txt"); // Change 'logs.txt' to your desired log file name
+  const logMessage = `${new Date().toISOString()}: ${message}\n`;
+  fs.appendFile(logFilePath, logMessage, (err) => {
+    if (err) console.error("Failed to write to log file:", err);
+  });
+};
+
 // Bulkupload used
 router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res, next) => {
   const selectedFiles = req.body.selectedFiles;
@@ -535,18 +1017,14 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
         where: { otherTitle: document.otherTitle, documentTypeId: document.documentTypeId },
         raw: true,
       });
-
       if (dupliacteDoc) {
         const attachments = await Attachment.findAll({
           where: { itemId: dupliacteDoc.id },
           raw: true,
         });
-
-        if (attachments.length == 0) {
-          exit = true;
-          logger.error(dupliacteDoc);
-          // throw new Error("Duplicate document name");
-        }
+        exit = true;
+        logger.error(dupliacteDoc);
+        console.log("Duplicate Attachment Found !");
       }
     })
   );
@@ -554,24 +1032,22 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
   if (exit) {
     return res.send("Duplicate doc or no attachment! ");
   }
-  // ===================================================
 
-  await Promise.all(
+  // ===================================================
+  console.log("Uploaded Success!");
+  Promise.all(
     selectedFiles.map(async (file) => {
       let document = file.document;
       document = {
         ...document,
-        sendToChecker: true, // automatically sent to user
+        sendToChecker: false, // automatically sent to user
         hierarchy: document?.hierarchy || req.payload?.hierarchy || null,
         branchId: document?.branchId || req.payload?.branchId || null,
         departmentId: document?.departmentId || req.payload?.departmentId || null,
       };
 
       const attachments = file.attachments;
-
-      // added owner id and created id
       document.createdBy = req.payload.id;
-      document.ownerId = req.payload.id;
 
       if (!document?.statusId) document.statusId = 1;
       if (document?.checker) document.isApproved = false;
@@ -601,7 +1077,7 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
         });
       }
 
-      return await Promise.all(
+      return Promise.all(
         attachments.map((attachment) => {
           return uploadAttachment(attachment);
         })
@@ -619,8 +1095,9 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
             attachmentType: "bulk-attachment-upload",
             isDeleted: false,
             documentIndex: file?.documentIndex,
-            createdBy: req.payload.id,
+            createdBy: 1,
           };
+
           return attachment;
         });
         return attachments_upload;
@@ -628,7 +1105,6 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
     })
   )
     .then(async (allAttachments, failure) => {
-      req.body = null;
       const success = await uploadAttachments([].concat(...allAttachments), res, req);
       if (!success || failure) {
         throw new Error("Error uploading in FTP");
@@ -638,8 +1114,8 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
             const attach = row.dataValues;
             // create index for attachment
             attach?.documentIndex &&
-              attach.documentIndex.map(async (item) => {
-                await DocumentIndexValue.create({
+              attach.documentIndex.map((item) => {
+                DocumentIndexValue.create({
                   ...item,
                   value: typeof item.value == "object" ? JSON.stringify(item.value) : item.value,
                   documentId: attach.itemId,
@@ -658,12 +1134,11 @@ router.post("/attachment/bulk-attachment-upload", auth.required, async (req, res
     })
     .catch((err) => {
       logger.error(err);
-      res.status(500).send("Error! Bulkupload ");
+      res.status(500).send("Error! Bulkupload : PROBABLY FTP STORAGE IS FULL : OR SOMETHING ELSE ");
     });
 });
 
-router.get("/attachment/download/:id/:cw", auth.required, (req, res, next) => {
-  let customWatermarkValue = req.params.cw || 1;
+router.get("/attachment/download/:id", auth.required, (req, res, next) => {
   // To maintain log
   let log_query;
 
@@ -674,38 +1149,24 @@ router.get("/attachment/download/:id/:cw", auth.required, (req, res, next) => {
         where: { id: req.params.id },
       })
         .then(async (attachment) => {
-          const useWatermarkConfig = attachment.customWatermark;
-          const customWatermarkID = attachment.customWatermarkId;
-          const isPreferredWatermark = attachment.isPreferredWatermark;
           const filePath = await checkCompressing(attachment);
-          console.log("temp" + filePath, filePath, req.params.id, false, req.payload);
-          downloadAttachmentFromFtp(
-            "temp" + filePath,
-            filePath,
-            req.params.id,
-            false,
-            req.payload,
-            customWatermarkValue,
-            useWatermarkConfig,
-            customWatermarkID,
-            isPreferredWatermark
-          ).then(async (isSuccessful) => {
-            // const doc = await getDocument(attachment.id, true);
-            // const fileName = doc[0].name;
-            // const fileExtension = "." + fileName.replace(/^.*\./, "");
+          await downloadAttachmentFromFtp("temp" + filePath, filePath, req.params.id, false, req.payload).then(
+            async (isSuccessful) => {
+              // const doc = await getDocument(attachment.id, true);
+              // const fileName = doc[0].name;
+              // const fileExtension = "." + fileName.replace(/^.*\./, "");
 
-            // const fixLocalPath = replaceExtension(filePath, fileExtension);
+              // const fixLocalPath = replaceExtension(filePath, fileExtension);
 
-            if (isSuccessful) {
-              // To maintain log
-              await createLog(req, constantLogType.ATTACHMENT, req.params.id, log_query);
-              const encodePath = encodeURI(filePath);
-
-              res.send({ success: true, file: encodePath });
-            } else {
-              res.send({ success: false, message: "Error in download!" });
+              if (isSuccessful) {
+                // To maintain log
+                await createLog(req, constantLogType.ATTACHMENT, req.params.id, log_query);
+                res.send({ success: true, file: filePath });
+              } else {
+                res.send({ success: false, message: "Error in download!" });
+              }
             }
-          });
+          );
         })
         .catch((err) => {
           logger.error(err);
@@ -717,8 +1178,7 @@ router.get("/attachment/download/:id/:cw", auth.required, (req, res, next) => {
   });
 });
 
-router.get("/attachment/preview/:id/:cw", auth.required, async (req, res, next) => {
-  const customWatermarkValue = req.params.cw || 14;
+router.get("/attachment/preview/:id", auth.required, (req, res, next) => {
   checkFtp((isConnected) => {
     if (isConnected) {
       Attachment.findOne({
@@ -727,41 +1187,21 @@ router.get("/attachment/preview/:id/:cw", auth.required, async (req, res, next) 
       })
 
         .then(async (attachment) => {
-          const findUser = await User.findOne({
-            where: { id: req.payload.id },
-          });
-
-          const isPreferredWatermark = findUser.dataValues.hasCustomWatermark || false;
-          const customWatermarkID = findUser.dataValues.customWatermarkId || customWatermarkValue;
-          // get file type return false if its not pdf
-          // const getFileType =
           const filePath = await checkCompressing(attachment);
-          const isPdf = isPDFFile(filePath);
-          downloadAttachmentFromFtp(
-            "temp" + filePath,
-            filePath,
-            req.params.id,
-            isPdf,
-            req.payload,
-            customWatermarkID,
-            isPreferredWatermark,
-            req.payload.id,
-            customWatermarkValue
-          ).then((isSuccessful) => {
-            if (isSuccessful) {
-              const fileType = attachment.name.split(".");
-
-              const encodePath = encodeURI(filePath);
-
-              res.send({
-                success: true,
-                filePath: encodePath,
-                fileType: fileType[fileType.length - 1],
-              });
-            } else {
-              res.send({ success: false, message: "Error!" });
+          await downloadAttachmentFromFtp("temp" + filePath, filePath, req.params.id, false, req.payload).then(
+            (isSuccessful) => {
+              if (isSuccessful) {
+                const fileType = attachment.name.split(".");
+                res.send({
+                  success: true,
+                  filePath: filePath,
+                  fileType: fileType[fileType.length - 1],
+                });
+              } else {
+                res.send({ success: false, message: "Error!" });
+              }
             }
-          });
+          );
         })
         .catch((err) => {
           res.json({ success: false, message: "Error!!!" });
@@ -772,7 +1212,7 @@ router.get("/attachment/preview/:id/:cw", auth.required, async (req, res, next) 
   });
 });
 
-router.get("/attachment/special-preview/:id", async (req, res, next) => {
+router.get("/attachment/special-preview/:id", auth.required, async (req, res, next) => {
   const { token, hourlyAccesId } = req.query;
 
   const decoded_id = getId(hourlyAccesId);
@@ -786,30 +1226,15 @@ router.get("/attachment/special-preview/:id", async (req, res, next) => {
     },
   });
   if (!forAllHourly) {
-    // set redactionStatus to 0 in Attachment table
-    Attachment.update(
-      {
-        redactionStatus: 0,
-      },
-      {
-        where: {
-          id: req.params.id,
-        },
-      }
-    );
     res.json({ success: false, message: "Document time limit has exceeded!" });
     return;
   }
+  console.log(decoded_id);
   // get hourlyaccess user
-  const userAccessEmail = await HourlyAccess.findOne({
-  where: {
-    id: decoded_id
-  },
-  include: [{
-    model: HourlyAccessMultiple,
-    as: 'hourlyAccessMultiples'
-  }]
-});
+  const userAccessEmail = await execSelectQuery(`
+        select * from hourly_access_multiples ham
+        join hourly_accesses ha on ha.id =ham.hourlyAccessId
+        where ha.id = ${decoded_id}`);
 
   checkFtp((isConnected) => {
     if (isConnected) {
@@ -824,12 +1249,9 @@ router.get("/attachment/special-preview/:id", async (req, res, next) => {
           }).then((isSuccessful) => {
             if (isSuccessful) {
               const fileType = attachment.name.split(".");
-              const redactionStatus = attachment.redaction;
-              const redactedFilePath = attachment.redactedFilePath;
-
               res.send({
                 success: true,
-                filePath: redactionStatus ? redactedFilePath : filePath,
+                filePath: filePath,
                 fileType: fileType[fileType.length - 1],
               });
             } else {
@@ -897,8 +1319,7 @@ router.delete("/attachment/:id", auth.required, async (req, res, next) => {
       isMaker = true;
     }
   }
-
-  await deleteItem(
+  deleteItem(
     Attachment,
     {
       id: id,
@@ -1018,24 +1439,20 @@ router.get("/test", async (req, res, next) => {});
  *      '201':
  *        description: Successfully created user
  */
-router.get("/excel", async (req, res, next) => {
+router.get("/execel", async (req, res, next) => {
   const fs = require("fs");
   const { parse } = require("csv-parse");
 
   fs.createReadStream("./indexUpdate.csv")
     .pipe(parse({ delimiter: ",", from_line: 2 }))
     .on("data", async function (row) {
-      await SecurityHierarchy.update(
-        {
-          branchId: row[2],
-          type: row[1]
-        },
-        {
-          where: {
-            code: row[0]
-          }
-        }
-      );
+      const query = `
+      update security_hierarchies
+      set branchId =${row[2]} , type='${row[1]}'
+      where code ='${row[0]}'`;
+
+      await execUpdateQery(query);
+      // console.log(row[0], row[1]);
     })
     .on("end", function () {
       console.log("finished");
@@ -1103,10 +1520,77 @@ router.get("/ocr", async (req, res, next) => {
   res.send({ success: true, result });
 });
 
-//  route to encrypt archieve attachments regardless of isEncrypted feature is enabled or not
+router.get("/document-cif/:cif", async (req, res, next) => {
+  const { cif } = req.params;
+  try {
+    const document = await execSelectQuery(`SELECT
+    div.id AS documentIndexValueId,
+    div.documentId,
+    div.documentIndexId,
+    div.value,
+    div.isDeleted AS documentIndexValueIsDeleted,
+    div.attachmentId,
+    div.createdAt AS documentIndexValueCreatedAt,
+    div.updatedAt AS documentIndexValueUpdatedAt,
+    doc.name AS documentName,
+    doc.description AS documentDescription,
+    att.id AS attachmentId,
+    att.name AS attachmentFileName,
+    att.filePath AS attachmentFilePath
+FROM
+    document_index_values div
+INNER JOIN
+    documents doc
+    ON div.documentId = doc.id
+INNER JOIN
+    attachments att
+    ON doc.id = att.itemId
+WHERE
+    div.value = '${cif}'
+    AND att.isDeleted = 0
+    AND (div.documentIndexId = 2 OR div.documentIndexId = 8 )`);
+    if (document.length === 0) return res.json({ success: false, message: "No document for provided CIF" });
+    res.json({ succes: true, data: document });
+  } catch (error) {
+    res.json({ success: false, message: "Internal server error" });
+  }
+});
 
-router.get("/encrypt-archieve", async (req, res) => {
-  encryptArchieve();
+router.get("/document-account-number/:accountNumber", async (req, res, next) => {
+  const { accountNumber } = req.params;
+  if (accountNumber.length !== 14) {
+    res.json({ success: false, message: "Invalid Account Number Must be of 14 Digits" });
+  }
+  try {
+    const document = await execSelectQuery(
+      `
+      SELECT
+      doc.otherTitle AS documentName,
+      doc.description AS documentDescription,
+      att.id AS attachmentId,
+      att.name AS attachmentFileName,
+      att.filePath AS attachmentFilePath
+      FROM
+      documents doc
+      INNER JOIN
+      attachments att
+      ON
+      doc.id = att.itemId
+      WHERE
+      doc.name = ${accountNumber}
+      AND
+      att.isDeleted = 0
+      AND
+      doc.isDeleted = 0
+      `
+    );
+    if (document.length === 0) {
+      res.json({ success: false, message: "No document found for provided account number" });
+    }
+    res.json({ success: true, data: document });
+  } catch (error) {
+    res.json({ success: false, message: "Internal server error" });
+  }
 });
 
 module.exports = router;

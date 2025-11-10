@@ -16,8 +16,7 @@ router.use(require("./routes/watermark"));
 router.use(require("./routes/tag"));
 router.use(require("./routes/report"));
 router.use(require("./routes/hourlyAccessMutiple"));
-router.use(require("./routes/scanner"));
-router.use(require("./routes/redaction"));
-router.use(require("./routes/custom_watermark"));
+router.use(require("./routes/customwatermark"));
+
 
 module.exports = router;

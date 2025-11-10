@@ -12,7 +12,7 @@ const userValidator = [
     .custom(exists(User, "Email"))
     .custom((value) => {
       const domain = getBanksDomain();
-      const pattern = new RegExp(`^.+${domain.replace(".", "\\.")}$`);
+      const pattern = new RegExp(domain);
 
       if (!pattern.test(value)) {
         throw new Error(`Use '${getBanksDomain()}' domain.`);
@@ -35,16 +35,16 @@ const userValidator = [
   body("password")
     .notEmpty()
     .withMessage("Password is required.")
-    .isLength({ min: 8 })
-    .withMessage("Password must be 8 characters."),
+    .isLength({ min: 12 })
+    .withMessage("Password must be 12 characters."),
 ];
 
 const passwordValidator = [
   body("password")
     .notEmpty()
     .withMessage("Password is required.")
-    .isLength({ min: 8 })
-    .withMessage("Password must be 8 characters.")
+    .isLength({ min: 12 })
+    .withMessage("Password must be 12 characters.")
 
     .matches(`(?=.*[A-Z])`)
     .withMessage(`The string must contain at least 1 uppercase alphabetical character`)
@@ -78,8 +78,8 @@ const userEditValidator = [
   body("branchId").custom(validUserDepartmentIdAndBranchId),
   body("password")
     .optional()
-    .isLength({ min: 8 })
-    .withMessage("Password must be 8 characters.")
+    .isLength({ min: 12 })
+    .withMessage("Password must be 12 characters.")
 
     .matches(`(?=.*[A-Z])`)
     .withMessage(`The string must contain at least 1 uppercase alphabetical character`)

@@ -33,7 +33,8 @@ const paginateQuery = (
     identifier,
     searchingParameters,
   },
-  getTotalDocument, user
+  getTotalDocument,
+  user
 ) => {
   limit = limit ? limit : 5;
   offset = page ? (page - 1) * limit : 0;
@@ -52,8 +53,7 @@ const paginateQuery = (
     // Query for total document and search filter
     const { query, total } = querySearchAndFilter(user, offset, limit, filterText, textIndexFilter);
     // consoleLog(query);
-
-
+    console.log(query, "here");
 
     // Only return total query if getTotalDocuent is true
     return getTotalDocument ? total : query;

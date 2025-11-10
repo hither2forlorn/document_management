@@ -136,19 +136,18 @@ npm run jsdoc
 | `2022-5-9` | document_audits| `message` |
 | `2022-5-9` | documents| `userGroupId` |
 | `2022-5-9` | users| `userGroupId` |
-| `2022-9-9` | security_hierarchy| `multipleHierarchy` |
 
 
 **Application Changes**
 
 **Frontend Navigation**
 _nav.js -> permission control the view / hide -show the navigation
-routes.js -> controls the view - blanks if permission do not match.
+routes.js -> controls the view - blanks if permission do not match. 
 
 **Notes**
 Logs
 Document logs -> document_audits table, approval, reject with message, approval cycle - attachment and document
-Attachment logs -> logs table
+Attachment logs -> logs table 
 
 **Document View**
 Audit logs Nav bar => Visible for ['user'] permission
@@ -161,5 +160,3 @@ And in document.js route uncomment oracledb import
 
 for switching to pnpm
 pnpm i cropperjs draft-js react-draft-wysiwyg
-#   d o c u m e n t _ m a n a g e m e n t  
- 

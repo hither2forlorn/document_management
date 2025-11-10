@@ -59,7 +59,7 @@ router.get("/attachment/preview/:id", auth.client, (req, res, next) => {
       })
         .then(async (attachment) => {
           const filePath = await checkCompressing(attachment);
-          downloadAttachmentFromFtp("temp" + filePath, filePath).then((isSuccessful) => {
+          await downloadAttachmentFromFtp("temp" + filePath, filePath).then((isSuccessful) => {
             if (isSuccessful) {
               const fileType = attachment.name.split(".");
               res.send({
@@ -99,15 +99,18 @@ router.post("/attachment", auth.client, (req, res, next) => {
           name: file.originalname,
           fileType: file.mimetype,
           size: file.size / 1024,
-          filePath: "/" + itemType + "/" + itemId + "/" + file.originalname,
+          filePath: "/" + itemType + "/" + itemId + "/" + Date.now() + "-" + file.originalname,
           localPath: file.path,
           itemId: itemId,
           ...(itemType ? { itemType } : {}),
           attachmentType: "normal-upload",
           isDeleted: false,
           createdBy,
+          ...(createdBy === 1 ? { pendingApproval: 1 } : {}),
         };
+
         attachments.push(attachment);
+        console.log(attachments, "hereeee");
       });
       uploadAttachments(attachments)
         .then((success, failure) => {

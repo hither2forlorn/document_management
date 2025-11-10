@@ -72,8 +72,7 @@ router.delete("/document-index-value", (req, res, next) => {
     req.payload,
     (response) => {
       res.send(response);
-    },
-    req
+    }
   );
 });
 module.exports = router;

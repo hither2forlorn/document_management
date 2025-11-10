@@ -19,9 +19,10 @@ const {
   Constant,
   UserGroup,
   Branch,
+  LocationMap,
 } = require("../../config/database");
 const PRODUCTION_ENV = require("../../util/checkNodeEnv");
-const { filterCheckerList, DocumentTypeData, BranchData, BranchList } = require("../util/get_all_util");
+const { filterCheckerList, DocumentTypeData, BranchData } = require("../util/get_all_util");
 
 /**
  * @method module:Miscellaneous#getAll
@@ -36,12 +37,15 @@ router.get("/all", auth.required, async (req, res, next) => {
     branchId: req.payload.branchId || "",
     hierarchy: req.payload.hierarchy,
   };
+  
   const userAttributes =
-    "branchId,createdAt,createdBy,dateOfBirth,dateRegistered,departmentId,designation,distinguishedName,editedBy,email,expiryDate,gender,hierarchy,id,identityNo,isActive,isDeleted,isExpirePassword,isSecurePassword,isStrongPassword,loginAttempts,loginAttemptsCount,name,notes,phoneNumber,roleId,statusId,type,updatedAt,username";
+    "branchId,createdAt,createdBy,dateOfBirth,dateRegistered,departmentId,designation,distinguishedName,editedBy,email,expiryDate,gender,hierarchy,id,identityNo,isActive,isDeleted,loginAttempts,loginAttemptsCount,name,notes,phoneNumber,roleId,statusId,type,updatedAt,username";
   const statuses = [
     { name: "Active", id: 1, value: "active" },
     { name: "Checked Out", id: 2, value: "checkedOut" },
     { name: "Suspended", id: 3, value: "checkedIn" },
+    { name: "Dormant", id: 4, value: "dormant" },
+    { name: "Closed", id: 5, value: "closed" },
   ];
   const userStatuses = [
     { name: "Active", id: 1 },
@@ -59,18 +63,29 @@ router.get("/all", auth.required, async (req, res, next) => {
     { id: 1, name: "Yes" },
   ];
 
-  const hasUnit = [
-    { id: 0, name: "No" },
-    { id: 1, name: "Yes" },
-  ];
+  let defaultValues = {};
+  if (req.payload.branchId) {
+    const getBranch = await Branch.findOne({
+      where: {
+        id: req.payload.branchId,
+      },
+    });
+    const getBranchName = getBranch.dataValues.name;
+    const originalBranchName = getBranchName.replace(/ BRANCH/g, "");
+    const findLocationMap = await LocationMap.findOne({
+      where: {
+        name: originalBranchName,
+      },
+    });
 
-  const defaultValues = {
-    hierarchy: req.payload.hierarchy,
-    branchId: req.payload.branchId,
-    departmentId: req.payload.departmentId,
-    securityLevel: 0,
-  };
-
+    defaultValues = {
+      locationMapId: req.payload.id == 1 ? {} : findLocationMap ? findLocationMap.dataValues.id : {},
+      securityLevel: 2,
+    };
+  }
+  const branches = await Branch.findAll({
+    where: { isDeleted: false },
+  });
   DocumentType.hasMany(DocumentTypeIndex, {
     foreignKey: "docId",
     sourceKey: "id",
@@ -82,15 +97,13 @@ router.get("/all", auth.required, async (req, res, next) => {
   });
 
   let users = await availableHierarchy(user, "users", userAttributes, "");
-  const branchList = await Branch.findAll({
-    where: { isDeleted: false },
-  });
+
   // filter user - active only, checkers,
   const filterUser = await filterCheckerList(req, users, true);
   const checkerList = await filterCheckerList(req, users);
+  const viewUsersBySuperAdmin = req?.payload?.hierarchy === "Super-001" ? users : [];
 
   Promise.all([
-    branchList,
     availableHierarchy(user, "roles", "id, name ,hierarchy", ""),
     RoleType.findAll({ where: { isDeleted: false } }),
     SecurityLevel.findAll(),
@@ -116,11 +129,10 @@ router.get("/all", auth.required, async (req, res, next) => {
     }),
     Constant.findAll({}),
     UserGroup.findAll({}),
-    hasUnit,
   ])
+
     .then(
       ([
-        branchList,
         roles,
         roleTypes,
         securityLevels,
@@ -131,16 +143,13 @@ router.get("/all", auth.required, async (req, res, next) => {
         locationTypes,
         departments,
         hierarchy,
-        branches,
         districts,
         provinces,
         constants,
         userGroup,
-        hasUnit,
       ]) => {
         res.send({
-          branchList,
-          users: filterUser,
+          users: viewUsersBySuperAdmin,
           roles,
           roleTypes,
           securityLevels,
@@ -151,7 +160,6 @@ router.get("/all", auth.required, async (req, res, next) => {
           documentTypes: getSortedItems(documentTypes, null, true),
           locationMaps: getSortedItems(locationMaps, null, true),
           locationTypes,
-          branches,
           departments: getSortedItems(departments, null, true),
           hierarchy: getSortedItems(hierarchy, null, true).filter((hierarchy) => hierarchy?.id !== 1),
           memoStatuses,
@@ -161,8 +169,8 @@ router.get("/all", auth.required, async (req, res, next) => {
           constants,
           checkerList,
           userGroup,
-          hasUnit,
           defaultValues,
+          branches,
         });
       }
     )
