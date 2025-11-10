@@ -15,7 +15,7 @@ const Fuse = require("fuse.js");
 var jwt = require("jsonwebtoken");
 // For BOK CBS oracle database
 // const connection = require("../../config/oracle");
-const {Op} = require('sequelize');
+const { Op } = require("sequelize");
 const DocumentAuditModel = require("../models/document_audit");
 const Sequelize = require("sequelize");
 const {
@@ -182,12 +182,12 @@ router.post("/document", [validator(Docs), auth.required], auth.required, async 
   } else {
     req.body.isApproved = false;
   }
-const role = await Role.findOne({
-  attributes: ['name'],
-  where: {
-    id: req.payload.roleId
-  }
-});
+  const role = await Role.findOne({
+    attributes: ["name"],
+    where: {
+      id: req.payload.roleId,
+    },
+  });
   if (role[0]?.name === "System") {
     req.body.isApproved = true;
   }
@@ -256,14 +256,59 @@ router.get("/document/pagination", auth.required, async (req, res, next) => {
   req.query.userId = req.payload.id;
   let paginationDocument = await execSelectQuery(paginateQuery(req.query, false, req.payload));
   paginationDocument = paginationDocument?.filter((doc) => doc.isApproved === true);
-  // For branch-specific users (when branchId exists and not admin)
-  if (req.payload.branchId && req.payload.roleId !== 1) {
-    const userBranch = await execSelectQuery(
-      `SELECT name FROM branches WHERE id = ${req.payload.branchId}`
+
+  // ADDITION: Route-level search filtering (tags + text)
+  const searchData = req.query.searchingParameters ? JSON.parse(req.query.searchingParameters) : {};
+
+  // Tag filtering
+  if (searchData.tags && Array.isArray(searchData.tags) && searchData.tags.length > 0) {
+    for (let doc of paginationDocument) {
+      // Assuming you have a Tag model defined
+      const documentTags = await Tag.findAll({
+        attributes: ["value"],
+        where: {
+          docId: doc.id,
+          label: "tag",
+        },
+        raw: true, // if you want plain objects instead of model instances
+      });
+      doc.tags = documentTags.map((t) => t.value);
+    }
+    paginationDocument = paginationDocument.filter(
+      (doc) =>
+        doc.tags &&
+        doc.tags.some((docTag) =>
+          searchData.tags.some((searchTag) => docTag.toLowerCase().includes(searchTag.toLowerCase()))
+        )
     );
+  }
+
+  // Text search filtering
+  if (searchData.simpleText) {
+    const searchTerm = searchData.simpleText.toLowerCase();
+    paginationDocument = paginationDocument.filter(
+      (doc) =>
+        doc.DocumentType?.toLowerCase().includes(searchTerm) ||
+        doc.DocumentName?.toLowerCase().includes(searchTerm) ||
+        doc.Department?.toLowerCase().includes(searchTerm) ||
+        doc.Branch?.toLowerCase().includes(searchTerm) ||
+        doc.OrganizationName?.toLowerCase().includes(searchTerm) ||
+        doc.username?.toLowerCase().includes(searchTerm) ||
+        false
+    );
+  }
+  if (req.payload.branchId && req.payload.roleId !== 1) {
+    // Assuming you have a Branch model defined
+    const userBranch = await Branch.findAll({
+      attributes: ["name"],
+      where: {
+        id: req.payload.branchId,
+      },
+      raw: true, // This returns plain objects instead of model instances
+    });
     if (userBranch.length > 0) {
       const branchName = userBranch[0].name;
-      paginationDocument = paginationDocument.filter(doc => doc.Branch === branchName);
+      paginationDocument = paginationDocument.filter((doc) => doc.Branch === branchName);
     } else {
       paginationDocument = [];
     }
@@ -271,9 +316,9 @@ router.get("/document/pagination", auth.required, async (req, res, next) => {
     // For department-level users, filter branch documents based on allowed branches.
     // Fetch allowed branch names for the user's department.
     const allowedBranches = await getAssociatedBranches(req.payload.departmentId);
-    const allowedBranchNames = allowedBranches.map(b => b.name);
+    const allowedBranchNames = allowedBranches.map((b) => b.name);
     // Filter the documents: if a document has a non-null Branch, ensure it is in the allowed list.
-    paginationDocument = paginationDocument.filter(doc => {
+    paginationDocument = paginationDocument.filter((doc) => {
       // If Branch is null, assume it's a department-level document.
       if (doc.Branch === null || doc.Branch === undefined) return true;
       return allowedBranchNames.includes(doc.Branch);
@@ -653,7 +698,7 @@ router.get("/document/pending-pagination", auth.required, async (req, res, next)
 
   try {
     // Check if the user has Department Admin access (roleTypeId = 22)
-   const roleQuery = `
+    const roleQuery = `
   SELECT rc.roleTypeId
   FROM users u
   INNER JOIN role_controls rc ON u.roleId = rc.roleId
@@ -664,7 +709,9 @@ router.get("/document/pending-pagination", auth.required, async (req, res, next)
     const hasRoleTypeId = roleResult?.roleTypeId ? true : false; // True if user is Department Admin
 
     // Fetch pending documents
-    const paginationDocument = await execSelectQuery(getPendingDocument(req.query, (count = false), req.payload, hasRoleTypeId));
+    const paginationDocument = await execSelectQuery(
+      getPendingDocument(req.query, (count = false), req.payload, hasRoleTypeId)
+    );
     const totalDocument = await execSelectQuery(getPendingDocument(req.query, (count = true), req.payload, hasRoleTypeId));
 
     res.send({
@@ -695,7 +742,9 @@ router.get("/document/rejected-pagination", auth.required, async (req, res, next
     const hasRoleTypeId = roleResult?.roleTypeId ? true : false; // True if user is Department Admin
 
     // Fetch rejected documents
-    const paginationDocument = await execSelectQuery(getRejectedDocument(req.query, (count = false), req.payload, hasRoleTypeId));
+    const paginationDocument = await execSelectQuery(
+      getRejectedDocument(req.query, (count = false), req.payload, hasRoleTypeId)
+    );
     const totalDocument = await execSelectQuery(getRejectedDocument(req.query, (count = true), req.payload, hasRoleTypeId));
 
     res.send({
@@ -1058,12 +1107,12 @@ router.post("/document/approve", auth.required, validateUserApprove, async (req,
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
     //updated for verifyBy
-   if (userInput) {
-  await Document.update(
-    { verifyBy: userInput }, // values to update
-    { where: { id } }        // condition
-  );
-}
+    if (userInput) {
+      await Document.update(
+        { verifyBy: userInput }, // values to update
+        { where: { id } } // condition
+      );
+    }
 
     approveDocument(req.payload.id, req.body.id, (message) => {
       if (message.success) {
@@ -1102,26 +1151,28 @@ router.post("/document/send-to-checker", auth.required, async (req, res, next) =
 
   // Dont send empty attachment to checker.
   Document.hasMany(Attachment, { foreignKey: "itemId", sourceKey: "id" });
-    const document = await Document.findOne({
-      where: { id },
+  const document = await Document.findOne({
+    where: { id },
     include: {
-        model: Attachment,
-        attributes: ["name", "attachmentDescription"],
+      model: Attachment,
+      attributes: ["name", "attachmentDescription"],
       where: {
         isDeleted: false,
       },
-        required: false,
+      required: false,
     },
-    });
+  });
 
   if (document.attachments.length == 0)
-      return res.json({
-        success: false,
-        message: "Please add attachment before sending to checker",
-      });
+    return res.json({
+      success: false,
+      message: "Please add attachment before sending to checker",
+    });
 
   await execUpdateQery(
-    `update documents set sendToChecker=1, returnedByApprover=0 ${message ? `, description='${message}'` : ""}  where id =  ${id}`
+    `update documents set sendToChecker=1, returnedByApprover=0 ${
+      message ? `, description='${message}'` : ""
+    }  where id =  ${id}`
   );
 
   const approval_master = await execSelectQuery(
@@ -1140,7 +1191,7 @@ router.post("/document/send-to-checker", auth.required, async (req, res, next) =
   res.json({
     success: true,
     message: "Successfully Sent to Checker",
-    });
+  });
 });
 
 router.post("/document/send-to-approver", auth.required, async (req, res, next) => {
@@ -1175,66 +1226,66 @@ router.post("/document/send-to-approver", auth.required, async (req, res, next) 
 
     // Update document status to mark it as sent to the approver
     // Replace all three execUpdateQery calls with this single ORM update
-const updateData = {
-  sendToApprover: 1,
-  returnedByApprover: 0,
-  checkedAt: new Date()
-};
+    const updateData = {
+      sendToApprover: 1,
+      returnedByApprover: 0,
+      checkedAt: new Date(),
+    };
 
-if (message) updateData.commentByChecker = message;
-if (checkerName) updateData.checkedBy = checkerName;
+    if (message) updateData.commentByChecker = message;
+    if (checkerName) updateData.checkedBy = checkerName;
 
-await Document.update(updateData, {
-  where: { id: id }
-});
+    await Document.update(updateData, {
+      where: { id: id },
+    });
 
     // Retrieve or update the approval master for this document
-   // Use findAll since you're expecting an array result
-const approvalMasters = await ApprovalMaster.findAll({
-  attributes: ['id', 'assignedTo'],
-  where: {
-    documentId: id,
-    type: 'document'
-  }
-});
+    // Use findAll since you're expecting an array result
+    const approvalMasters = await ApprovalMaster.findAll({
+      attributes: ["id", "assignedTo"],
+      where: {
+        documentId: id,
+        type: "document",
+      },
+    });
 
-// Then use array destructuring like your original code
-const [approvalMaster] = approvalMasters;
+    // Then use array destructuring like your original code
+    const [approvalMaster] = approvalMasters;
 
     if (approvalMaster) {
       // Update the approver assignment in approval_masters
-   await ApprovalMaster.update(
-  {
-    approverId: approverId
-  },
-  {
-    where: {
-      id: approvalMaster.id
-    }
-  }
-);
+      await ApprovalMaster.update(
+        {
+          approverId: approverId,
+        },
+        {
+          where: {
+            id: approvalMaster.id,
+          },
+        }
+      );
     } else {
       // Insert a new approval master if not already present - FIXED
-   await ApprovalMaster.create({
-  documentId: id,
-  type: 'document',
-  assignedTo: approverId,
-  approvalId: approverId,
-  createdAt: new Date(),
-  updatedAt: new Date()
-});
+      await ApprovalMaster.create({
+        documentId: id,
+        type: "document",
+        assignedTo: approverId,
+        approvalId: approverId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
     }
 
     // Insert a new entry in `approval_queues` for the approver - FIXED
-  await ApprovalQueue.create({
-  approvalMasterId: approvalMaster.id,
-  isActive: 1,
-  level: 2,
-  userId: approverId,
-  isApprover: 1,
-  createdAt: new Date(),
-  updatedAt: new Date()
-});
+    await ApprovalQueue.create({
+      approvalMasterId: approvalMaster.id,
+      isActive: 1,
+      level: 2,
+      userId: approverId,
+      isApprover: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     // Log the action
     await createLog(req, constantLogType.DOCUMENT, id, `Document sent to approver by checker`);

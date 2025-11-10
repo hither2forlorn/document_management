@@ -2,7 +2,7 @@ const router = require("express").Router();
 const auth = require("../../config/auth");
 const validator = require("../../util/validation");
 const { deleteItem, DOCUMENT_TYPE } = require("../../config/delete");
-const { DocumentType } = require("../../config/database");
+const { DocumentType, SecurityHierarchy } = require("../../config/database");
 const { documentTypeValidation, documentTypeValidationEdit } = require("../../validations/document_type");
 const { availableHierarchy } = require("../../util/hierarchyManage");
 const { createLog, constantLogType, findPreviousData } = require("../../util/logsManagement");
@@ -19,26 +19,24 @@ router.post("/document-type", validator(documentTypeValidation), auth.required, 
 
   req.body.parentId = req.body?.parentId == "" ? null : req.body?.parentId;
 
-const whereConditions = {
-  isDeleted: 0,
-  name: req.body?.name
-};
+  const whereConditions = {
+    isDeleted: 0,
+    name: req.body?.name,
+  };
 
-// Add parentId condition if provided and not empty string
-if (req.body?.parentId || req.body?.parentId === 0) {
-  whereConditions.parentId = req.body.parentId;
-}
+  // Add parentId condition if provided and not empty string
+  if (req.body?.parentId || req.body?.parentId === 0) {
+    whereConditions.parentId = req.body.parentId;
+  }
 
-// Add hierarchy condition if provided
-if (req.body?.hierarchy) {
-  whereConditions.hierarchy = req.payload.id == 1 ? 
-    (req.body.hierarchy || "CONSTANT") : 
-    req.payload?.hierarchy;
-}
+  // Add hierarchy condition if provided
+  if (req.body?.hierarchy) {
+    whereConditions.hierarchy = req.payload.id == 1 ? req.body.hierarchy || "CONSTANT" : req.payload?.hierarchy;
+  }
 
-const checkDocTypeExists = await DocumentType.findAll({
-  where: whereConditions
-});
+  const checkDocTypeExists = await DocumentType.findAll({
+    where: whereConditions,
+  });
 
   if (checkDocTypeExists.length > 0) {
     return res.json({
@@ -82,6 +80,55 @@ router.get("/document-type", auth.required, async (req, res, next) => {
       console.log(err);
       res.json({ success: false, message: "Error!" });
     });
+});
+
+//document-type from department
+router.get("/document-type-by-department", auth.required, async (req, res, next) => {
+  const { departmentId } = req.query;
+
+  if (!departmentId) {
+    return res.json({ success: false, message: "Department ID is required" });
+  }
+
+  try {
+    const securityHierarchies = await SecurityHierarchy.findAll({
+      attributes: ["code"],
+      where: {
+        departmentId: departmentId,
+        isDeleted: false,
+      },
+      raw: true,
+    });
+
+    const codes = securityHierarchies.map((sh) => sh.code);
+
+    // Get both data and count
+    const [documentTypes, totalCount] = await Promise.all([
+      DocumentType.findAll({
+        attributes: ["id", "name"],
+        where: {
+          hierarchy: { [Op.in]: codes },
+          isDeleted: false,
+        },
+        raw: true,
+      }),
+      DocumentType.count({
+        where: {
+          hierarchy: { [Op.in]: codes },
+          isDeleted: false,
+        },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      data: documentTypes,
+      totalCount: totalCount,
+    });
+  } catch (err) {
+    console.log(err);
+    res.json({ success: false, message: "Error!" });
+  }
 });
 
 router.get("/document-type/:id", auth.required, (req, res, next) => {

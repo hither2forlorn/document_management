@@ -342,6 +342,7 @@ router.get("/user/getByDeptId/:id", auth.required, async (req, res, next) => {
     const result = await User.findAll({
       where: {
         departmentId: req.params.id,
+        isDeleted: false,
       },
     });
     res.status(200).json({
