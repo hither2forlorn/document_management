@@ -44,6 +44,7 @@ const {
   District,
   Role,
   ApprovalQueue,
+  Branch,
 } = require("../../config/database");
 const _ = require("lodash");
 const { getBOKIDs, verifyBOKID, getCustomerDetails, getBOKIDsCBS } = require("../sqlQuery/bok-view");
@@ -259,6 +260,30 @@ router.get("/document/pagination", auth.required, async (req, res, next) => {
 
   // ADDITION: Route-level search filtering (tags + text)
   const searchData = req.query.searchingParameters ? JSON.parse(req.query.searchingParameters) : {};
+  
+   const isExpirySection = searchData.expiryDate === 1;
+
+  // Fetch disposalDate for all documents
+  const documentIds = paginationDocument.map(doc => doc.id);
+  
+  if (documentIds.length > 0) {
+    const disposalDateQuery = `
+      SELECT id, disposalDate 
+      FROM documents 
+      WHERE id IN (${documentIds.join(',')})
+    `;
+    const documentsWithDisposalDate = await execSelectQuery(disposalDateQuery);
+    
+    const disposalDateMap = new Map();
+    documentsWithDisposalDate.forEach(doc => {
+      disposalDateMap.set(doc.id, doc.disposalDate);
+    });
+
+    paginationDocument = paginationDocument.map(doc => ({
+      ...doc,
+      disposalDate: disposalDateMap.get(doc.id)
+    }));
+  }
 
   // Tag filtering
   if (searchData.tags && Array.isArray(searchData.tags) && searchData.tags.length > 0) {
@@ -297,6 +322,14 @@ router.get("/document/pagination", auth.required, async (req, res, next) => {
         false
     );
   }
+
+   // APPLY DISPOSAL DATE FILTERING ONLY FOR EXPIRY SECTION
+  if (isExpirySection) {
+    paginationDocument = paginationDocument.filter((doc) => {
+      return doc.disposalDate !== null && doc.disposalDate !== undefined;
+    });
+  }
+
   if (req.payload.branchId && req.payload.roleId !== 1) {
     // Assuming you have a Branch model defined
     const userBranch = await Branch.findAll({

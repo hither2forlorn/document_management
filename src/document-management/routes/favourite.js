@@ -5,10 +5,11 @@ const auth = require("../../config/auth");
 const logger = require("../../config/logger");
 const { canViewTheDocument } = require("../auth");
 const Op = require("sequelize").Op;
-const { Favourite, Document, sequelize } = require("../../config/database");
+const { Favourite, Document, sequelize, Branch } = require("../../config/database");
 const _ = require("lodash");
 const { getArchivedDocumnet, getFavouriteDocument } = require("../util/documentPaginate");
 const Sequelize = require("sequelize");
+const getAssociatedBranches = require("../../util/getAssociatedBranches");
 router.get("/favourite", auth.required, async (req, res, next) => {
   const { docId } = req.query;
   if (docId) {
@@ -63,24 +64,79 @@ router.post("/favourite", auth.required, async (req, res, next) => {
 router.get("/favourite/list", auth.required, async (req, res, next) => {
   req.query.userId = req.payload.id;
   try {
-    const paginationDocument = await sequelize.query(getFavouriteDocument(req.query, false, req.payload), {
+    let paginationDocument = await sequelize.query(getFavouriteDocument(req.query, false, req.payload), {
       type: Sequelize.QueryTypes.SELECT,
     });
-    const totalDocument = await sequelize.query(
-      // true for counting document
-      getFavouriteDocument(req.query, true, req.payload),
-      {
-        type: Sequelize.QueryTypes.SELECT,
-      }
+
+    console.log('Before filtering - raw documents:', paginationDocument.length);
+    
+    // FIRST: Remove duplicates and get only current user's favourites
+    const userFavourites = await Favourite.findAll({
+      where: {
+        ownerId: req.payload.id,
+        isfavourite: true
+      },
+      attributes: ['documentId'],
+      raw: true
+    });
+
+    const favouriteDocIds = userFavourites.map(fav => fav.documentId);
+
+    // SECOND: Filter to show only documents that current user has favourited
+    paginationDocument = paginationDocument.filter(doc => 
+      favouriteDocIds.includes(doc.id)
     );
+
+    // THIRD: Remove duplicates (in case same document appears multiple times)
+    const uniqueDocuments = [];
+    const seenIds = new Set();
+    
+    paginationDocument.forEach(doc => {
+      if (!seenIds.has(doc.id)) {
+        seenIds.add(doc.id);
+        uniqueDocuments.push(doc);
+      }
+    });
+
+    paginationDocument = uniqueDocuments;
+
+    // Apply role-based filtering for non-admin users
+    if (req.payload.roleId !== 1) {
+      if (req.payload.branchId) {
+        const userBranch = await Branch.findAll({
+          attributes: ["name"],
+          where: {
+            id: req.payload.branchId,
+          },
+          raw: true,
+        });
+        if (userBranch.length > 0) {
+          const branchName = userBranch[0].name;
+          paginationDocument = paginationDocument.filter((doc) => doc.Branch === branchName);
+        } else {
+          paginationDocument = [];
+        }
+      } else {
+        const allowedBranches = await getAssociatedBranches(req.payload.departmentId);
+        const allowedBranchNames = allowedBranches.map((b) => b.name);
+        paginationDocument = paginationDocument.filter((doc) => {
+          if (doc.Branch === null || doc.Branch === undefined) return true;
+          return allowedBranchNames.includes(doc.Branch);
+        });
+      }
+    }
+
     res.send({
       paginationDocument,
-      total: totalDocument[0]?.total,
+      total: paginationDocument.length, // Use actual count after filtering
       success: true,
     });
   } catch (err) {
     console.log(err);
-    res.send({ message: err });
+    res.status(500).send({ 
+      message: 'Internal server error',
+      success: false 
+    });
   }
 });
 module.exports = router;
